@@ -9,7 +9,8 @@ export function setupCommands(bot: Bot<BotContext>): void {
   bot.command('status', handleStatus);
   bot.command('locations', handleLocations);
   bot.command('generate', handleGenerate);
-  bot.command('trip', handleTrip);
+  bot.command('tripnew', handleTripNew);
+  bot.command('triplist', handleTripList);
   bot.command('help', handleHelp);
 }
 
@@ -56,8 +57,8 @@ async function handleStart(ctx: BotContext): Promise<void> {
       'Команды:\n' +
       '/status — статистика\n' +
       '/locations — список локаций\n' +
-      '/trip new [название] — новая поездка\n' +
-      '/trip list — список поездок\n' +
+      '/tripnew — новая поездка\n' +
+      '/triplist — список поездок\n' +
       '/generate — сгенерировать story\n' +
       '/help — справка'
   );
@@ -69,7 +70,7 @@ async function handleStatus(ctx: BotContext): Promise<void> {
 
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
-    await ctx.reply('📊 Нет активной поездки.\n\nИспользуйте /trip new [название] для создания.');
+    await ctx.reply('📊 Нет активной поездки.\n\nИспользуйте /tripnew для создания.');
     return;
   }
 
@@ -167,78 +168,68 @@ async function handleGenerate(ctx: BotContext): Promise<void> {
   );
 }
 
-async function handleTrip(ctx: BotContext): Promise<void> {
+async function handleTripNew(ctx: BotContext): Promise<void> {
   const user = (ctx as AuthenticatedContext).user;
   if (!user) return;
 
+  if (!user.is_admin) {
+    await ctx.reply('⛔ Только администратор может создавать поездки.');
+    return;
+  }
+
   const text = ctx.message?.text || '';
-  const parts = text.split(' ').slice(1);
-  const subcommand = parts[0]?.toLowerCase();
+  const tripName = text.replace(/^\/tripnew\s*/i, '').trim() || `Поездка ${new Date().toLocaleDateString('ru')}`;
 
-  if (subcommand === 'new') {
-    if (!user.is_admin) {
-      await ctx.reply('⛔ Только администратор может создавать поездки.');
-      return;
-    }
+  const chatId = ctx.chat?.id;
+  const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
 
-    const tripName = parts.slice(1).join(' ') || `Поездка ${new Date().toLocaleDateString('ru')}`;
+  const { data: newTrip, error } = await supabase
+    .from('trips')
+    .insert({
+      name: tripName,
+      created_by: user.id,
+      telegram_group_id: isGroup ? chatId : null,
+      status: 'active',
+    })
+    .select()
+    .single();
 
-    const chatId = ctx.chat?.id;
-    const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
-
-    const { data: newTrip, error } = await supabase
-      .from('trips')
-      .insert({
-        name: tripName,
-        created_by: user.id,
-        telegram_group_id: isGroup ? chatId : null,
-        status: 'active',
-      })
-      .select()
-      .single();
-
-    if (error) {
-      await ctx.reply('❌ Ошибка создания поездки.');
-      return;
-    }
-
-    await ctx.reply(`✅ Поездка "${newTrip.name}" создана!\n\nТеперь можно отправлять фото и отзывы.`);
+  if (error) {
+    await ctx.reply('❌ Ошибка создания поездки.');
     return;
   }
 
-  if (subcommand === 'list') {
-    const chatId = ctx.chat?.id;
-    const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+  await ctx.reply(`✅ Поездка "${newTrip.name}" создана!\n\nТеперь можно отправлять фото и отзывы.`);
+}
 
-    let query = supabase.from('trips').select('*').order('created_at', { ascending: false });
+async function handleTripList(ctx: BotContext): Promise<void> {
+  const user = (ctx as AuthenticatedContext).user;
+  if (!user) return;
 
-    if (isGroup) {
-      query = query.eq('telegram_group_id', chatId);
-    } else {
-      query = query.eq('created_by', user.id);
-    }
+  const chatId = ctx.chat?.id;
+  const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
 
-    const { data: trips } = await query;
+  let query = supabase.from('trips').select('*').order('created_at', { ascending: false });
 
-    if (!trips || trips.length === 0) {
-      await ctx.reply('📋 Нет поездок.');
-      return;
-    }
+  if (isGroup) {
+    query = query.eq('telegram_group_id', chatId);
+  } else {
+    query = query.eq('created_by', user.id);
+  }
 
-    const tripsList = trips.map((trip, index) => {
-      const status = trip.status === 'active' ? '🟢' : '⚪';
-      return `${index + 1}. ${status} ${trip.name}`;
-    });
+  const { data: trips } = await query;
 
-    await ctx.reply(`📋 Ваши поездки:\n\n${tripsList.join('\n')}`);
+  if (!trips || trips.length === 0) {
+    await ctx.reply('📋 Нет поездок.\n\nИспользуйте /tripnew [название] для создания.');
     return;
   }
 
-  await ctx.reply(
-    '📋 Команды поездок:\n\n' +
-      '/trip new [название] — создать поездку\n' +
-      '/trip list — список поездок'
-  );
+  const tripsList = trips.map((trip, index) => {
+    const status = trip.status === 'active' ? '🟢' : '⚪';
+    return `${index + 1}. ${status} ${trip.name}`;
+  });
+
+  await ctx.reply(`📋 Ваши поездки:\n\n${tripsList.join('\n')}`);
 }
 
 async function handleHelp(ctx: BotContext): Promise<void> {
@@ -251,8 +242,8 @@ async function handleHelp(ctx: BotContext): Promise<void> {
       '/start — начало работы\n' +
       '/status — статистика поездки\n' +
       '/locations — список локаций\n' +
-      '/trip new [название] — новая поездка (admin)\n' +
-      '/trip list — список поездок\n' +
+      '/tripnew — новая поездка (admin)\n' +
+      '/triplist — список поездок\n' +
       '/generate — сгенерировать story\n\n' +
       'Лимиты: 3 фото и 3 отзыва на локацию от одного пользователя.'
   );

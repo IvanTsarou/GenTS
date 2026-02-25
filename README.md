@@ -101,8 +101,8 @@ APP_URL=https://your-app.vercel.app npm run setup-webhook
 | `/start` | Приветствие и регистрация |
 | `/status` | Статистика текущей поездки |
 | `/locations` | Список локаций |
-| `/trip new [название]` | Создать поездку (только admin) |
-| `/trip list` | Список поездок |
+| `/tripnew [название]` | Создать поездку (только admin) |
+| `/triplist` | Список поездок |
 | `/generate` | Сгенерировать story |
 | `/help` | Справка |
 
