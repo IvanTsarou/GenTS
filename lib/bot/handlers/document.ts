@@ -12,10 +12,28 @@ import { v4 as uuidv4 } from 'uuid';
 type AuthenticatedContext = BotContext & { user: User };
 
 const PHOTO_LIMIT_PER_LOCATION = 3;
+const IMAGE_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/heic', 'image/heif'];
 
-export async function handlePhoto(ctx: BotContext): Promise<void> {
+export async function handleDocument(ctx: BotContext): Promise<void> {
   const user = (ctx as AuthenticatedContext).user;
   if (!user) return;
+
+  const document = ctx.message?.document;
+  if (!document) return;
+
+  const mimeType = document.mime_type?.toLowerCase() || '';
+  const fileName = document.file_name?.toLowerCase() || '';
+
+  const isImage = IMAGE_MIME_TYPES.includes(mimeType) ||
+    fileName.endsWith('.jpg') ||
+    fileName.endsWith('.jpeg') ||
+    fileName.endsWith('.png') ||
+    fileName.endsWith('.heic') ||
+    fileName.endsWith('.heif');
+
+  if (!isImage) {
+    return;
+  }
 
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
@@ -26,16 +44,12 @@ export async function handlePhoto(ctx: BotContext): Promise<void> {
     return;
   }
 
-  const photos = ctx.message?.photo;
-  if (!photos || photos.length === 0) return;
-
-  const largestPhoto = photos[photos.length - 1];
   const caption = ctx.message?.caption || null;
 
-  await ctx.reply('📸 Обрабатываю фото...\n\n💡 Совет: отправляйте фото как файл (📎 → Файл), чтобы сохранить EXIF-данные.');
+  await ctx.reply('📸 Обрабатываю фото (с EXIF)...');
 
   try {
-    const file = await ctx.api.getFile(largestPhoto.file_id);
+    const file = await ctx.api.getFile(document.file_id);
     const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 
     const response = await fetch(fileUrl);
@@ -51,23 +65,27 @@ export async function handlePhoto(ctx: BotContext): Promise<void> {
       return;
     }
 
-    let coordinates = exifData.coordinates;
-    let shotAt = exifData.dateTaken;
+    const coordinates = exifData.coordinates;
+    const shotAt = exifData.dateTaken;
 
     if (!coordinates) {
       await supabase.from('media').insert({
         id: mediaId,
         trip_id: activeTrip.id,
         user_id: user.id,
-        telegram_file_id: largestPhoto.file_id,
+        telegram_file_id: document.file_id,
         file_url: uploadResult.fileUrl,
         thumbnail_url: uploadResult.thumbnailUrl,
         shot_at: shotAt?.toISOString() || new Date().toISOString(),
         caption,
       });
 
+      const dateInfo = shotAt
+        ? `\n📅 Дата: ${shotAt.toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' })}`
+        : '';
+
       await ctx.reply(
-        '📍 Фото сохранено, но без геолокации.\n\n' +
+        `📍 Фото сохранено, но без геолокации.${dateInfo}\n\n` +
           'Отправьте геолокацию (📎 → Геопозиция), чтобы привязать фото к месту.',
         {
           reply_to_message_id: ctx.message?.message_id,
@@ -129,7 +147,7 @@ export async function handlePhoto(ctx: BotContext): Promise<void> {
           id: mediaId,
           trip_id: activeTrip.id,
           user_id: user.id,
-          telegram_file_id: largestPhoto.file_id,
+          telegram_file_id: document.file_id,
           file_url: uploadResult.fileUrl,
           thumbnail_url: uploadResult.thumbnailUrl,
           shot_at: shotAt?.toISOString() || new Date().toISOString(),
@@ -147,7 +165,7 @@ export async function handlePhoto(ctx: BotContext): Promise<void> {
       trip_id: activeTrip.id,
       location_id: location?.id || null,
       user_id: user.id,
-      telegram_file_id: largestPhoto.file_id,
+      telegram_file_id: document.file_id,
       file_url: uploadResult.fileUrl,
       thumbnail_url: uploadResult.thumbnailUrl,
       shot_at: shotAt?.toISOString() || new Date().toISOString(),
@@ -169,10 +187,11 @@ export async function handlePhoto(ctx: BotContext): Promise<void> {
       `✅ Фото сохранено!\n\n` +
         `📍 ${locationName}\n` +
         `📅 ${dateStr}` +
-        (caption ? `\n💬 "${caption}"` : '')
+        (caption ? `\n💬 "${caption}"` : '') +
+        '\n\n✨ EXIF-данные успешно извлечены!'
     );
   } catch (error) {
-    console.error('Photo handling error:', error);
+    console.error('Document photo handling error:', error);
     await ctx.reply('❌ Ошибка обработки фото. Попробуйте ещё раз.');
   }
 }
