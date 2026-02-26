@@ -143,6 +143,28 @@ curl -X PATCH https://your-app.vercel.app/api/admin/users/USER_UUID \
 
 - 3 фото на локацию от одного пользователя
 - 3 отзыва на локацию от одного пользователя (текст + аудио суммарно)
+- Видео до 20 MB загружаются сразу
+- Видео больше 20 MB регистрируются для отложенного скачивания
+
+## Скачивание больших файлов
+
+Большие видео (>20 MB) сохраняются как ссылки на Telegram и скачиваются после поездки:
+
+```bash
+# Показать список ожидающих файлов
+node scripts/download-pending-media.js --list
+
+# Скачать все файлы
+node scripts/download-pending-media.js
+
+# Скачать и загрузить в Supabase Storage
+node scripts/download-pending-media.js --upload
+
+# Скачать только для конкретной поездки
+node scripts/download-pending-media.js --trip-id <uuid> --upload
+```
+
+Файлы сохраняются в папку `downloads/`.
 
 ## Структура проекта
 
@@ -171,7 +193,8 @@ GenTS/
 ├── supabase/
 │   └── migrations/               # SQL migrations
 ├── scripts/
-│   └── setup-webhook.js          # Webhook setup script
+│   ├── setup-webhook.js          # Webhook setup script
+│   └── download-pending-media.js # Download large files
 └── vercel.json                   # Vercel config
 ```
 

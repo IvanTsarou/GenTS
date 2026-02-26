@@ -19,14 +19,9 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
   const video = ctx.message?.video || ctx.message?.video_note;
   if (!video) return;
 
-  const fileSizeMB = (video.file_size || 0) / (1024 * 1024);
-  if (fileSizeMB > 20) {
-    await ctx.reply(
-      `⚠️ Видео слишком большое (${fileSizeMB.toFixed(1)} MB).\n\n` +
-        'Лимит: 20 MB. Попробуйте сжать видео или отправить более короткий ролик.'
-    );
-    return;
-  }
+  const fileSize = video.file_size || 0;
+  const fileSizeMB = fileSize / (1024 * 1024);
+  const isLargeFile = fileSizeMB > 20;
 
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
@@ -38,6 +33,42 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
   }
 
   const caption = ctx.message?.caption || null;
+
+  if (isLargeFile) {
+    await ctx.reply(`🎬 Большое видео (${fileSizeMB.toFixed(1)} MB) — сохраняю ссылку для скачивания позже...`);
+    
+    try {
+      const mediaId = uuidv4();
+      
+      await supabase.from('media').insert({
+        id: mediaId,
+        trip_id: activeTrip.id,
+        user_id: user.id,
+        telegram_file_id: video.file_id,
+        file_url: null,
+        thumbnail_url: null,
+        shot_at: new Date().toISOString(),
+        caption,
+        pending_download: true,
+        file_size_bytes: fileSize,
+        media_type: 'video',
+      });
+
+      await ctx.reply(
+        `✅ Видео зарегистрировано!\n\n` +
+          `📦 Размер: ${fileSizeMB.toFixed(1)} MB\n` +
+          `⏳ Статус: ожидает скачивания\n\n` +
+          'Файл будет скачан после поездки через специальный скрипт.',
+        {
+          reply_to_message_id: ctx.message?.message_id,
+        }
+      );
+    } catch (error) {
+      console.error('Large video registration error:', error);
+      await ctx.reply('❌ Ошибка регистрации видео. Попробуйте ещё раз.');
+    }
+    return;
+  }
 
   await ctx.reply(`🎬 Обрабатываю видео (${fileSizeMB.toFixed(1)} MB)...`);
 
@@ -94,6 +125,9 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
         thumbnail_url: null,
         shot_at: shotAt?.toISOString() || new Date().toISOString(),
         caption,
+        pending_download: false,
+        file_size_bytes: fileSize,
+        media_type: 'video',
       });
 
       await ctx.reply(
@@ -166,6 +200,9 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
           lat: coordinates.lat,
           lng: coordinates.lng,
           caption,
+          pending_download: false,
+          file_size_bytes: fileSize,
+          media_type: 'video',
         });
 
         return;
@@ -184,6 +221,9 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
       lat: coordinates.lat,
       lng: coordinates.lng,
       caption,
+      pending_download: false,
+      file_size_bytes: fileSize,
+      media_type: 'video',
     });
 
     const locationName = location?.name || location?.city || 'новая локация';

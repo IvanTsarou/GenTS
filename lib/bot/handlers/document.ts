@@ -42,15 +42,14 @@ export async function handleDocument(ctx: BotContext): Promise<void> {
   }
 
   if (isVideo) {
-    const fileSizeMB = (document.file_size || 0) / (1024 * 1024);
+    const fileSize = document.file_size || 0;
+    const fileSizeMB = fileSize / (1024 * 1024);
+    
     if (fileSizeMB > 20) {
-      await ctx.reply(
-        `⚠️ Видео слишком большое (${fileSizeMB.toFixed(1)} MB).\n\n` +
-          'Лимит: 20 MB. Попробуйте сжать видео или отправить более короткий ролик.'
-      );
+      await handleLargeVideoDocument(ctx, user, document, fileSize, fileSizeMB);
       return;
     }
-    await handleVideoDocument(ctx, user, document);
+    await handleVideoDocument(ctx, user, document, fileSize);
     return;
   }
 
@@ -215,10 +214,65 @@ export async function handleDocument(ctx: BotContext): Promise<void> {
   }
 }
 
+async function handleLargeVideoDocument(
+  ctx: BotContext,
+  user: User,
+  document: { file_id: string; file_name?: string; mime_type?: string },
+  fileSize: number,
+  fileSizeMB: number
+): Promise<void> {
+  const activeTrip = await getActiveTrip(ctx);
+  if (!activeTrip) {
+    await ctx.reply(
+      '❌ Нет активной поездки.\n\n' +
+        'Используйте /tripnew для создания.'
+    );
+    return;
+  }
+
+  const caption = ctx.message?.caption || null;
+
+  await ctx.reply(`🎬 Большое видео (${fileSizeMB.toFixed(1)} MB) — сохраняю ссылку для скачивания позже...`);
+
+  try {
+    const mediaId = uuidv4();
+
+    await supabase.from('media').insert({
+      id: mediaId,
+      trip_id: activeTrip.id,
+      user_id: user.id,
+      telegram_file_id: document.file_id,
+      file_url: null,
+      thumbnail_url: null,
+      shot_at: new Date().toISOString(),
+      caption,
+      pending_download: true,
+      file_size_bytes: fileSize,
+      original_filename: document.file_name || null,
+      media_type: 'video',
+    });
+
+    await ctx.reply(
+      `✅ Видео зарегистрировано!\n\n` +
+        `📦 Размер: ${fileSizeMB.toFixed(1)} MB\n` +
+        `📁 Файл: ${document.file_name || 'без имени'}\n` +
+        `⏳ Статус: ожидает скачивания\n\n` +
+        'Файл будет скачан после поездки через специальный скрипт.',
+      {
+        reply_to_message_id: ctx.message?.message_id,
+      }
+    );
+  } catch (error) {
+    console.error('Large video registration error:', error);
+    await ctx.reply('❌ Ошибка регистрации видео. Попробуйте ещё раз.');
+  }
+}
+
 async function handleVideoDocument(
   ctx: BotContext,
   user: User,
-  document: { file_id: string; file_name?: string; mime_type?: string }
+  document: { file_id: string; file_name?: string; mime_type?: string },
+  fileSize: number = 0
 ): Promise<void> {
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
@@ -286,6 +340,10 @@ async function handleVideoDocument(
         thumbnail_url: null,
         shot_at: shotAt?.toISOString() || new Date().toISOString(),
         caption,
+        pending_download: false,
+        file_size_bytes: fileSize,
+        original_filename: document.file_name || null,
+        media_type: 'video',
       });
 
       const dateInfo = shotAt
@@ -350,6 +408,10 @@ async function handleVideoDocument(
       lat: coordinates?.lat,
       lng: coordinates?.lng,
       caption,
+      pending_download: false,
+      file_size_bytes: fileSize,
+      original_filename: document.file_name || null,
+      media_type: 'video',
     });
 
     const locationName = location?.name || location?.city || 'новая локация';
