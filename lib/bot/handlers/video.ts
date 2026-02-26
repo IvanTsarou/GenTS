@@ -19,6 +19,15 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
   const video = ctx.message?.video || ctx.message?.video_note;
   if (!video) return;
 
+  const fileSizeMB = (video.file_size || 0) / (1024 * 1024);
+  if (fileSizeMB > 20) {
+    await ctx.reply(
+      `⚠️ Видео слишком большое (${fileSizeMB.toFixed(1)} MB).\n\n` +
+        'Лимит: 20 MB. Попробуйте сжать видео или отправить более короткий ролик.'
+    );
+    return;
+  }
+
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
     await ctx.reply(
@@ -30,7 +39,7 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
 
   const caption = ctx.message?.caption || null;
 
-  await ctx.reply('🎬 Обрабатываю видео...');
+  await ctx.reply(`🎬 Обрабатываю видео (${fileSizeMB.toFixed(1)} MB)...`);
 
   try {
     const file = await ctx.api.getFile(video.file_id);

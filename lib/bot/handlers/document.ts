@@ -42,6 +42,14 @@ export async function handleDocument(ctx: BotContext): Promise<void> {
   }
 
   if (isVideo) {
+    const fileSizeMB = (document.file_size || 0) / (1024 * 1024);
+    if (fileSizeMB > 20) {
+      await ctx.reply(
+        `⚠️ Видео слишком большое (${fileSizeMB.toFixed(1)} MB).\n\n` +
+          'Лимит: 20 MB. Попробуйте сжать видео или отправить более короткий ролик.'
+      );
+      return;
+    }
     await handleVideoDocument(ctx, user, document);
     return;
   }

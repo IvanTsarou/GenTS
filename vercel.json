@@ -1,7 +1,7 @@
 {
   "functions": {
     "app/api/webhook/telegram/route.ts": {
-      "maxDuration": 30
+      "maxDuration": 60
     },
     "app/api/trip/[id]/generate/route.ts": {
       "maxDuration": 60
