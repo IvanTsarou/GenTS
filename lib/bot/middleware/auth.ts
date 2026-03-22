@@ -1,6 +1,6 @@
 import type { NextFunction } from 'grammy';
 import type { BotContext } from '../index';
-import { supabase } from '@/lib/supabase';
+import { supabase, type User } from '@/lib/supabase';
 import { logBotMessage, type MessageType } from '@/lib/logger';
 
 const PUBLIC_COMMANDS = ['/start'];
@@ -12,6 +12,7 @@ export async function authMiddleware(
   const telegramUser = ctx.from;
   const chatId = ctx.chat?.id;
   const messageText = ctx.message?.text;
+  const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
 
   await logBotMessage(
     telegramUser?.id,
@@ -24,6 +25,20 @@ export async function authMiddleware(
     }
   );
 
+  // Обработка добавления бота в группу (без проверки whitelist)
+  if (ctx.myChatMember) {
+    const status = ctx.myChatMember.new_chat_member.status;
+    const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+    if (isGroup && (status === 'member' || status === 'administrator')) {
+      await ctx.reply(
+        '👋 Добавлен в группу!\n\n' +
+          'Создайте поездку командой: /tripnew [название]\n\n' +
+          'После этого бот будет обрабатывать фото и видео от всех участников.'
+      );
+    }
+    return;
+  }
+
   if (!telegramUser) {
     return;
   }
@@ -33,6 +48,25 @@ export async function authMiddleware(
     return;
   }
 
+  // В группе: если есть активная поездка для этой группы — разрешаем всем участникам
+  if (isGroup && chatId) {
+    const { data: groupTrip } = await supabase
+      .from('trips')
+      .select('id')
+      .eq('telegram_group_id', chatId)
+      .eq('status', 'active')
+      .limit(1)
+      .maybeSingle();
+
+    if (groupTrip) {
+      const user = await getOrCreateGroupUser(telegramUser);
+      (ctx as BotContext & { user: User }).user = user;
+      await next();
+      return;
+    }
+  }
+
+  // Личный чат или группа без поездки: требуется whitelist
   const { data: user } = await supabase
     .from('users')
     .select('*')
@@ -55,9 +89,47 @@ export async function authMiddleware(
     return;
   }
 
-  (ctx as BotContext & { user: typeof user }).user = user;
+  (ctx as BotContext & { user: User }).user = user;
 
   await next();
+}
+
+/** Создаёт или возвращает пользователя для участника группы (автоверификация) */
+async function getOrCreateGroupUser(telegramUser: { id: number; first_name: string; last_name?: string; username?: string }): Promise<User> {
+  const { data: existing } = await supabase
+    .from('users')
+    .select('*')
+    .eq('telegram_id', telegramUser.id)
+    .single();
+
+  if (existing) {
+    if (!existing.is_verified) {
+      await supabase
+        .from('users')
+        .update({
+          is_verified: true,
+          name: telegramUser.first_name + (telegramUser.last_name ? ` ${telegramUser.last_name}` : ''),
+          username: telegramUser.username,
+        })
+        .eq('id', existing.id);
+    }
+    return existing;
+  }
+
+  const { data: created, error } = await supabase
+    .from('users')
+    .insert({
+      telegram_id: telegramUser.id,
+      name: telegramUser.first_name + (telegramUser.last_name ? ` ${telegramUser.last_name}` : ''),
+      username: telegramUser.username,
+      is_verified: true,
+      is_admin: false,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return created;
 }
 
 function getMessageType(ctx: BotContext): string {

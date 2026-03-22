@@ -42,3 +42,7 @@ coverage/
 
 # Misc
 *.pem
+
+# Telethon import session
+scripts/import-group-history/gents_import_session*
+scripts/import-group-history/.venv/

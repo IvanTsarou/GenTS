@@ -11,8 +11,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 type AuthenticatedContext = BotContext & { user: User };
 
-const PHOTO_LIMIT_PER_LOCATION = 3;
-
 export async function handlePhoto(ctx: BotContext): Promise<void> {
   const user = (ctx as AuthenticatedContext).user;
   if (!user) return;
@@ -110,36 +108,6 @@ export async function handlePhoto(ctx: BotContext): Promise<void> {
       }
 
       location = newLocation;
-    }
-
-    if (location) {
-      const { count } = await supabase
-        .from('media')
-        .select('id', { count: 'exact', head: true })
-        .eq('location_id', location.id)
-        .eq('user_id', user.id);
-
-      if ((count || 0) >= PHOTO_LIMIT_PER_LOCATION) {
-        await ctx.reply(
-          `⚠️ Достигнут лимит ${PHOTO_LIMIT_PER_LOCATION} фото на эту локацию.\n\n` +
-            'Фото сохранено без привязки к локации.'
-        );
-
-        await supabase.from('media').insert({
-          id: mediaId,
-          trip_id: activeTrip.id,
-          user_id: user.id,
-          telegram_file_id: largestPhoto.file_id,
-          file_url: uploadResult.fileUrl,
-          thumbnail_url: uploadResult.thumbnailUrl,
-          shot_at: shotAt?.toISOString() || new Date().toISOString(),
-          lat: coordinates.lat,
-          lng: coordinates.lng,
-          caption,
-        });
-
-        return;
-      }
     }
 
     await supabase.from('media').insert({

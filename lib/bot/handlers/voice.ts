@@ -7,7 +7,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 type AuthenticatedContext = BotContext & { user: User };
 
-const REVIEW_LIMIT_PER_LOCATION = 3;
 const LAST_PHOTO_WINDOW_HOURS = 2;
 
 export async function handleVoice(ctx: BotContext): Promise<void> {
@@ -42,21 +41,6 @@ export async function handleVoice(ctx: BotContext): Promise<void> {
     }
 
     const location = await findLocationForReview(ctx, user, activeTrip.id);
-
-    if (location) {
-      const { count } = await supabase
-        .from('reviews')
-        .select('id', { count: 'exact', head: true })
-        .eq('location_id', location.id)
-        .eq('user_id', user.id);
-
-      if ((count || 0) >= REVIEW_LIMIT_PER_LOCATION) {
-        await ctx.reply(
-          `⚠️ Достигнут лимит ${REVIEW_LIMIT_PER_LOCATION} отзывов на эту локацию.`
-        );
-        return;
-      }
-    }
 
     const dayDate = new Date().toISOString().split('T')[0];
 

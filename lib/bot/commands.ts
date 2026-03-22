@@ -245,7 +245,7 @@ async function handleHelp(ctx: BotContext): Promise<void> {
       '/tripnew — новая поездка (admin)\n' +
       '/triplist — список поездок\n' +
       '/generate — сгенерировать story\n\n' +
-      'Лимиты: 3 фото и 3 отзыва на локацию от одного пользователя.'
+      'В группе бот принимает медиа от всех участников.'
   );
 }
 

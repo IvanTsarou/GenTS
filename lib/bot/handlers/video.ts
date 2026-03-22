@@ -10,8 +10,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 type AuthenticatedContext = BotContext & { user: User };
 
-const VIDEO_LIMIT_PER_LOCATION = 3;
-
 export async function handleVideo(ctx: BotContext): Promise<void> {
   const user = (ctx as AuthenticatedContext).user;
   if (!user) return;
@@ -174,39 +172,6 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
       }
 
       location = newLocation;
-    }
-
-    if (location) {
-      const { count } = await supabase
-        .from('media')
-        .select('id', { count: 'exact', head: true })
-        .eq('location_id', location.id)
-        .eq('user_id', user.id);
-
-      if ((count || 0) >= VIDEO_LIMIT_PER_LOCATION) {
-        await ctx.reply(
-          `⚠️ Достигнут лимит медиа на эту локацию.\n\n` +
-            'Видео сохранено без привязки к локации.'
-        );
-
-        await supabase.from('media').insert({
-          id: mediaId,
-          trip_id: activeTrip.id,
-          user_id: user.id,
-          telegram_file_id: video.file_id,
-          file_url: videoUrl,
-          thumbnail_url: null,
-          shot_at: shotAt?.toISOString() || new Date().toISOString(),
-          lat: coordinates.lat,
-          lng: coordinates.lng,
-          caption,
-          pending_download: false,
-          file_size_bytes: fileSize,
-          media_type: 'video',
-        });
-
-        return;
-      }
     }
 
     await supabase.from('media').insert({
