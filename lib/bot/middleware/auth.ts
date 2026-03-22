@@ -1,6 +1,7 @@
 import type { NextFunction } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import type { BotContext } from '../index';
+import { BOT_MENU_COMMANDS } from '../commands';
 import { supabase, type User } from '@/lib/supabase';
 import { logBotMessage, type MessageType } from '@/lib/logger';
 
@@ -31,6 +32,15 @@ export async function authMiddleware(
     const status = ctx.myChatMember.new_chat_member.status;
     const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
     if (isGroup && (status === 'member' || status === 'administrator')) {
+      const chatId = ctx.chat?.id;
+      if (chatId !== undefined) {
+        await ctx.api
+          .setMyCommands(BOT_MENU_COMMANDS, {
+            scope: { type: 'chat', chat_id: chatId },
+          })
+          .catch((e) => console.error('setMyCommands (chat) failed:', e));
+      }
+
       const welcomeKb = new InlineKeyboard()
         .text('📍 Отзыв по локации', 'review_help:location')
         .row()

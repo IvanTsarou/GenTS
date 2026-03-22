@@ -1,9 +1,24 @@
 import type { Bot } from 'grammy';
+import type { BotCommand } from '@grammyjs/types';
 import type { BotContext } from './index';
 import { supabase, type User } from '@/lib/supabase';
 import { extractCommandText, insertTextReview } from '@/lib/reviews';
 
 type AuthenticatedContext = BotContext & { user: User };
+
+/** Меню бота (иконка / или ⋮ рядом с полем ввода) — и в личке, и в группах. */
+export const BOT_MENU_COMMANDS: BotCommand[] = [
+  { command: 'start', description: 'Начало работы' },
+  { command: 'help', description: 'Справка' },
+  { command: 'status', description: 'Статистика поездки' },
+  { command: 'locations', description: 'Список локаций' },
+  { command: 'triplist', description: 'Список поездок' },
+  { command: 'tripnew', description: 'Новая поездка' },
+  { command: 'generate', description: 'Сгенерировать story' },
+  { command: 'review_location', description: 'Отзыв по локации' },
+  { command: 'review_day', description: 'Отзыв на день' },
+  { command: 'review_trip', description: 'Отзыв о путешествии' },
+];
 
 export function setupCommands(bot: Bot<BotContext>): void {
   bot.command('start', handleStart);
@@ -18,19 +33,13 @@ export function setupCommands(bot: Bot<BotContext>): void {
   bot.command('review_trip', handleReviewTrip);
 
   void bot.api
-    .setMyCommands([
-      { command: 'start', description: 'Начало работы' },
-      { command: 'help', description: 'Справка' },
-      { command: 'status', description: 'Статистика поездки' },
-      { command: 'locations', description: 'Список локаций' },
-      { command: 'triplist', description: 'Список поездок' },
-      { command: 'tripnew', description: 'Новая поездка' },
-      { command: 'generate', description: 'Сгенерировать story' },
-      { command: 'review_location', description: 'Отзыв по локации' },
-      { command: 'review_day', description: 'Отзыв на день' },
-      { command: 'review_trip', description: 'Отзыв о путешествии' },
-    ])
-    .catch((e) => console.error('setMyCommands failed:', e));
+    .setMyCommands(BOT_MENU_COMMANDS)
+    .catch((e) => console.error('setMyCommands (default) failed:', e));
+
+  /** В группах меню надо явно привязать к чату; дублируем при my_chat_member в auth. */
+  void bot.api
+    .setMyCommands(BOT_MENU_COMMANDS, { scope: { type: 'all_group_chats' } })
+    .catch((e) => console.error('setMyCommands (all_group_chats) failed:', e));
 }
 
 async function handleStart(ctx: BotContext): Promise<void> {
