@@ -300,12 +300,29 @@ def already_imported(sb: Any, trip_id: str, key: str, dry: bool) -> bool:
     return bool(r.data)
 
 
+def _is_storage_payload_too_large(exc: BaseException) -> bool:
+    """Supabase Storage: 413 при превышении лимита размера объекта."""
+    s = str(exc).lower()
+    if "413" in s or "payload too large" in s or "too large" in s or "maximum allowed size" in s:
+        return True
+    args = getattr(exc, "args", None)
+    if args and isinstance(args[0], dict):
+        return args[0].get("statusCode") == 413
+    return False
+
+
 def upload_storage(sb: Any, path: str, data: bytes, content_type: str) -> Optional[str]:
-    sb.storage.from_("media").upload(
-        path,
-        data,
-        file_options={"content-type": content_type, "upsert": "true"},
-    )
+    """Загрузка в Storage. Возвращает None при 413 (файл слишком большой для лимита проекта)."""
+    try:
+        sb.storage.from_("media").upload(
+            path,
+            data,
+            file_options={"content-type": content_type, "upsert": "true"},
+        )
+    except Exception as e:
+        if _is_storage_payload_too_large(e):
+            return None
+        raise
     pub = sb.storage.from_("media").get_public_url(path)
     if isinstance(pub, dict):
         return pub.get("publicUrl") or pub.get("public_url")
@@ -432,6 +449,12 @@ async def run() -> int:
                 path_t = f"trips/{trip_id}/thumbnails/{media_id}.jpg"
                 file_url = upload_storage(sb, path_o, orig_jpeg, "image/jpeg")
                 thumb_url = upload_storage(sb, path_t, thumb_jpeg, "image/jpeg")
+                if file_url is None or thumb_url is None:
+                    print(
+                        f"Пропуск фото msg {msg.id}: лимит размера Storage (413). "
+                        f"Увеличьте лимит в Supabase → Project Settings → Storage или уменьшите файл."
+                    )
+                    continue
                 if not file_url or not thumb_url:
                     print(f"Ошибка загрузки в Storage msg {msg.id}")
                     continue
@@ -516,8 +539,13 @@ async def run() -> int:
 
             vpath = f"trips/{trip_id}/videos/{media_id}.{ext}"
             vurl = upload_storage(sb, vpath, raw, mime or "video/mp4")
-            if not vurl:
-                print(f"Ошибка загрузки видео msg {msg.id}")
+
+            # 413: лимит размера в Supabase Storage — полностью пропускаем (без БД и без локального файла)
+            if vurl is None:
+                print(
+                    f"Пропуск video msg={msg.id} — лимит Storage (413), ~{file_size / (1024 * 1024):.1f} MB. "
+                    f"Поднимите лимит в Supabase или импортируйте вручную."
+                )
                 continue
 
             coords, taken = extract_exif_exifread(raw)
