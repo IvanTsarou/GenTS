@@ -6,8 +6,18 @@ import { extractCommandText, insertTextReview } from '@/lib/reviews';
 
 type AuthenticatedContext = BotContext & { user: User };
 
-/** Меню бота (иконка / или ⋮ рядом с полем ввода) — и в личке, и в группах. */
-export const BOT_MENU_COMMANDS: BotCommand[] = [
+/** Меню для участников (не админов): без поездок, генерации и /start в списке. */
+export const BOT_MENU_COMMANDS_PUBLIC: BotCommand[] = [
+  { command: 'help', description: 'Справка' },
+  { command: 'status', description: 'Статистика поездки' },
+  { command: 'locations', description: 'Список локаций' },
+  { command: 'review_location', description: 'Отзыв по локации' },
+  { command: 'review_day', description: 'Отзыв на день' },
+  { command: 'review_trip', description: 'Отзыв о путешествии' },
+];
+
+/** Полное меню (is_admin в БД): + начало, поездки, генерация. */
+export const BOT_MENU_COMMANDS_ADMIN: BotCommand[] = [
   { command: 'start', description: 'Начало работы' },
   { command: 'help', description: 'Справка' },
   { command: 'status', description: 'Статистика поездки' },
@@ -19,6 +29,44 @@ export const BOT_MENU_COMMANDS: BotCommand[] = [
   { command: 'review_day', description: 'Отзыв на день' },
   { command: 'review_trip', description: 'Отзыв о путешествии' },
 ];
+
+const menuSyncCache = new Map<string, number>();
+const MENU_SYNC_TTL_MS = 5 * 60 * 1000;
+
+/** Текст «нет поездки»: не-админам не предлагаем /tripnew. */
+export function noActiveTripMessage(user: User): string {
+  if (user.is_admin) {
+    return '❌ Нет активной поездки.\n\nСоздайте поездку: /tripnew [название]';
+  }
+  return '❌ Нет активной поездки.\n\nПопросите администратора создать поездку.';
+}
+
+/** Обновляет меню команд для этого пользователя в этом чате (личка или группа). */
+export async function syncBotMenuForUser(ctx: BotContext, user: User): Promise<void> {
+  if (!ctx.chat || !ctx.from) return;
+  const t = ctx.chat.type;
+  if (t !== 'private' && t !== 'group' && t !== 'supergroup') return;
+
+  const key = `${ctx.chat.id}:${ctx.from.id}:${user.is_admin}`;
+  const now = Date.now();
+  const last = menuSyncCache.get(key);
+  if (last !== undefined && now - last < MENU_SYNC_TTL_MS) return;
+  menuSyncCache.set(key, now);
+
+  const commands = user.is_admin ? BOT_MENU_COMMANDS_ADMIN : BOT_MENU_COMMANDS_PUBLIC;
+
+  try {
+    if (t === 'private') {
+      await ctx.api.setMyCommands(commands, { scope: { type: 'chat', chat_id: ctx.chat.id } });
+    } else {
+      await ctx.api.setMyCommands(commands, {
+        scope: { type: 'chat_member', chat_id: ctx.chat.id, user_id: ctx.from.id },
+      });
+    }
+  } catch (e) {
+    console.error('syncBotMenuForUser failed:', e);
+  }
+}
 
 export function setupCommands(bot: Bot<BotContext>): void {
   bot.command('start', handleStart);
@@ -33,13 +81,12 @@ export function setupCommands(bot: Bot<BotContext>): void {
   bot.command('review_trip', handleReviewTrip);
 
   void bot.api
-    .setMyCommands(BOT_MENU_COMMANDS)
-    .catch((e) => console.error('setMyCommands (default) failed:', e));
+    .setMyCommands(BOT_MENU_COMMANDS_PUBLIC)
+    .catch((e) => console.error('setMyCommands (default, public) failed:', e));
 
-  /** В группах меню надо явно привязать к чату; дублируем при my_chat_member в auth. */
   void bot.api
-    .setMyCommands(BOT_MENU_COMMANDS, { scope: { type: 'all_group_chats' } })
-    .catch((e) => console.error('setMyCommands (all_group_chats) failed:', e));
+    .setMyCommands(BOT_MENU_COMMANDS_PUBLIC, { scope: { type: 'all_group_chats' } })
+    .catch((e) => console.error('setMyCommands (all_group_chats, public) failed:', e));
 }
 
 async function handleStart(ctx: BotContext): Promise<void> {
@@ -53,13 +100,19 @@ async function handleStart(ctx: BotContext): Promise<void> {
     .single();
 
   if (!existingUser) {
-    await supabase.from('users').insert({
-      telegram_id: telegramUser.id,
-      name: telegramUser.first_name + (telegramUser.last_name ? ` ${telegramUser.last_name}` : ''),
-      username: telegramUser.username,
-      is_verified: false,
-      is_admin: false,
-    });
+    const { data: created } = await supabase
+      .from('users')
+      .insert({
+        telegram_id: telegramUser.id,
+        name: telegramUser.first_name + (telegramUser.last_name ? ` ${telegramUser.last_name}` : ''),
+        username: telegramUser.username,
+        is_verified: false,
+        is_admin: false,
+      })
+      .select()
+      .single();
+
+    if (created) await syncBotMenuForUser(ctx, created as User);
 
     await ctx.reply(
       '👋 Добро пожаловать в GenTS — Travel Story Generator!\n\n' +
@@ -70,9 +123,20 @@ async function handleStart(ctx: BotContext): Promise<void> {
   }
 
   if (!existingUser.is_verified) {
+    await syncBotMenuForUser(ctx, existingUser);
     await ctx.reply(
       '⏳ Ваша заявка на рассмотрении.\n' +
         'Ожидайте подтверждения от администратора.'
+    );
+    return;
+  }
+
+  await syncBotMenuForUser(ctx, existingUser);
+
+  if (!existingUser.is_admin) {
+    await ctx.reply(
+      '⛔ Команда /start доступна только администратору.\n\n' +
+        'Используйте /help — справка по доступным командам.'
     );
     return;
   }
@@ -85,9 +149,7 @@ async function handleStart(ctx: BotContext): Promise<void> {
       'Команды:\n' +
       '/status — статистика\n' +
       '/locations — список локаций\n' +
-      '/tripnew — новая поездка\n' +
-      '/triplist — список поездок\n' +
-      '/generate — сгенерировать story\n' +
+      '/tripnew — новая поездка\n/triplist — список поездок\n/generate — сгенерировать story\n' +
       '/help — справка'
   );
 }
@@ -98,7 +160,7 @@ async function handleStatus(ctx: BotContext): Promise<void> {
 
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
-    await ctx.reply('📊 Нет активной поездки.\n\nИспользуйте /tripnew для создания.');
+    await ctx.reply(noActiveTripMessage(user));
     return;
   }
 
@@ -143,7 +205,7 @@ async function handleLocations(ctx: BotContext): Promise<void> {
 
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
-    await ctx.reply('📍 Нет активной поездки.');
+    await ctx.reply(noActiveTripMessage(user));
     return;
   }
 
@@ -183,6 +245,11 @@ async function handleLocations(ctx: BotContext): Promise<void> {
 async function handleGenerate(ctx: BotContext): Promise<void> {
   const user = (ctx as AuthenticatedContext).user;
   if (!user) return;
+
+  if (!user.is_admin) {
+    await ctx.reply('⛔ Эта команда доступна только администратору.');
+    return;
+  }
 
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
@@ -234,6 +301,11 @@ async function handleTripList(ctx: BotContext): Promise<void> {
   const user = (ctx as AuthenticatedContext).user;
   if (!user) return;
 
+  if (!user.is_admin) {
+    await ctx.reply('⛔ Эта команда доступна только администратору.');
+    return;
+  }
+
   const chatId = ctx.chat?.id;
   const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
 
@@ -248,7 +320,11 @@ async function handleTripList(ctx: BotContext): Promise<void> {
   const { data: trips } = await query;
 
   if (!trips || trips.length === 0) {
-    await ctx.reply('📋 Нет поездок.\n\nИспользуйте /tripnew [название] для создания.');
+    await ctx.reply(
+      user.is_admin
+        ? '📋 Нет поездок.\n\nСоздайте: /tripnew [название]'
+        : '📋 Поездок нет или нет доступа. Обратитесь к администратору.'
+    );
     return;
   }
 
@@ -261,6 +337,11 @@ async function handleTripList(ctx: BotContext): Promise<void> {
 }
 
 async function handleHelp(ctx: BotContext): Promise<void> {
+  const user = (ctx as AuthenticatedContext).user;
+  const adminBlock = user?.is_admin
+    ? '\nКоманды администратора:\n/start — начало работы\n/tripnew — новая поездка\n/triplist — список поездок\n/generate — сгенерировать story\n'
+    : '';
+
   await ctx.reply(
     '📖 GenTS — Travel Story Generator\n\n' +
       '📸 Фото/видео — дата и геолокация из EXIF (если есть)\n' +
@@ -270,13 +351,11 @@ async function handleHelp(ctx: BotContext): Promise<void> {
       '   • ответ на сообщение с фото/видео\n' +
       '   • /review_location, /review_day, /review_trip + текст\n\n' +
       'Команды:\n' +
-      '/start — начало работы\n' +
       '/status — статистика поездки\n' +
       '/locations — список локаций\n' +
-      '/tripnew — новая поездка (admin)\n' +
-      '/triplist — список поездок\n' +
-      '/generate — сгенерировать story\n\n' +
-      'В группе бот принимает медиа от всех участников.'
+      '/help — эта справка' +
+      adminBlock +
+      '\nВ группе бот принимает медиа от всех участников.'
   );
 }
 

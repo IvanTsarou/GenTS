@@ -1,7 +1,7 @@
 import type { NextFunction } from 'grammy';
 import { InlineKeyboard } from 'grammy';
 import type { BotContext } from '../index';
-import { BOT_MENU_COMMANDS } from '../commands';
+import { BOT_MENU_COMMANDS_PUBLIC, syncBotMenuForUser } from '../commands';
 import { supabase, type User } from '@/lib/supabase';
 import { logBotMessage, type MessageType } from '@/lib/logger';
 
@@ -35,10 +35,10 @@ export async function authMiddleware(
       const chatId = ctx.chat?.id;
       if (chatId !== undefined) {
         await ctx.api
-          .setMyCommands(BOT_MENU_COMMANDS, {
+          .setMyCommands(BOT_MENU_COMMANDS_PUBLIC, {
             scope: { type: 'chat', chat_id: chatId },
           })
-          .catch((e) => console.error('setMyCommands (chat) failed:', e));
+          .catch((e) => console.error('setMyCommands (chat, public) failed:', e));
       }
 
       const welcomeKb = new InlineKeyboard()
@@ -50,7 +50,7 @@ export async function authMiddleware(
 
       await ctx.reply(
         '👋 Добавлен в группу!\n\n' +
-          'Создайте поездку командой: /tripnew [название]\n\n' +
+          'Администратор может создать поездку: /tripnew [название]\n\n' +
           'После этого бот будет обрабатывать фото и видео от всех участников.\n\n' +
           'Текстовые отзывы: подпись к фото/видео, ответ на фото/видео или команды в меню (⋮).',
         { reply_markup: welcomeKb }
@@ -81,6 +81,7 @@ export async function authMiddleware(
     if (groupTrip) {
       const user = await getOrCreateGroupUser(telegramUser);
       (ctx as BotContext & { user: User }).user = user;
+      await syncBotMenuForUser(ctx, user);
       await next();
       return;
     }
@@ -111,6 +112,7 @@ export async function authMiddleware(
 
   (ctx as BotContext & { user: User }).user = user;
 
+  await syncBotMenuForUser(ctx, user);
   await next();
 }
 

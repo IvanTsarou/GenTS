@@ -6,7 +6,7 @@ import { uploadPhoto } from '@/lib/storage';
 import { findNearestLocation } from '@/lib/clustering';
 import { reverseGeocode } from '@/lib/geocoding';
 import { searchWikipedia } from '@/lib/wikipedia';
-import { getActiveTrip } from '../commands';
+import { getActiveTrip, noActiveTripMessage } from '../commands';
 import { insertCaptionReview } from '@/lib/reviews';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -55,10 +55,7 @@ export async function handleDocument(ctx: BotContext): Promise<void> {
 
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
-    await ctx.reply(
-      '❌ Нет активной поездки.\n\n' +
-        'Используйте /tripnew для создания.'
-    );
+    await ctx.reply(noActiveTripMessage(user));
     return;
   }
 
@@ -188,10 +185,7 @@ async function handleLargeVideoDocument(
 ): Promise<void> {
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
-    await ctx.reply(
-      '❌ Нет активной поездки.\n\n' +
-        'Используйте /tripnew для создания.'
-    );
+    await ctx.reply(noActiveTripMessage(user));
     return;
   }
 
@@ -235,10 +229,7 @@ async function handleVideoDocument(
 ): Promise<void> {
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
-    await ctx.reply(
-      '❌ Нет активной поездки.\n\n' +
-        'Используйте /tripnew для создания.'
-    );
+    await ctx.reply(noActiveTripMessage(user));
     return;
   }
 

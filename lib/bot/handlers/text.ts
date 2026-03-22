@@ -1,6 +1,6 @@
 import type { BotContext } from '../index';
 import type { User } from '@/lib/supabase';
-import { getActiveTrip } from '../commands';
+import { getActiveTrip, noActiveTripMessage } from '../commands';
 import { getMediaContextFromReply, insertTextReview } from '@/lib/reviews';
 
 type AuthenticatedContext = BotContext & { user: User };
@@ -16,10 +16,7 @@ export async function handleText(ctx: BotContext): Promise<void> {
 
   const activeTrip = await getActiveTrip(ctx);
   if (!activeTrip) {
-    await ctx.reply(
-      '❌ Нет активной поездки.\n\n' +
-        'Попросите администратора создать поездку.'
-    );
+    await ctx.reply(noActiveTripMessage(user));
     return;
   }
 

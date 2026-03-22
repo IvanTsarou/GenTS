@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import io
 import math
 import os
@@ -58,6 +59,45 @@ CLUSTER_RADIUS_M = 200
 EARTH_R_M = 6371000
 NOMINATIM_BASE = "https://nominatim.openstreetmap.org"
 THUMB_MAX = 400
+
+
+@contextlib.contextmanager
+def _telethon_import_lock(script_dir: str):
+    """
+    Только один процесс импорта: Telethon хранит сессию в SQLite (gents_import_session.session).
+    Два параллельных запуска → sqlite3.OperationalError: database is locked и «wrong session ID».
+    """
+    try:
+        import fcntl  # type: ignore[attr-defined]
+    except ImportError:
+        print(
+            "Предупреждение: fcntl недоступен — второй параллельный импорт не блокируется.",
+            file=sys.stderr,
+        )
+        yield
+        return
+
+    lock_path = os.path.join(script_dir, "gents_import_session.lock")
+    fp = open(lock_path, "a+")
+    try:
+        fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fp.close()
+        print(
+            "Уже запущен другой импорт (или завершите зависший процесс).\n"
+            "Не запускайте два раза import_group_history.py — один файл сессии Telethon.\n"
+            "Иначе: sqlite database is locked, Security error / wrong session ID.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    try:
+        yield
+    finally:
+        try:
+            fcntl.flock(fp.fileno(), fcntl.LOCK_UN)
+            fp.close()
+        except Exception:
+            pass
 
 
 def load_env() -> None:
@@ -372,98 +412,190 @@ async def run() -> int:
             print("В режиме --dry-run укажите IMPORT_CHAT_ID для подключения к чату", file=sys.stderr)
             return 1
 
-    session_path = os.path.join(os.path.dirname(__file__), "gents_import_session")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    session_path = os.path.join(script_dir, "gents_import_session")
     client = TelegramClient(session_path, int(api_id), api_hash)
 
     processed = 0
     skipped_dup = 0
 
-    async with client:
-        await client.start()
-        entity = await client.get_entity(chat_id)
+    with _telethon_import_lock(script_dir):
+        async with client:
+            await client.start()
+            entity = await client.get_entity(chat_id)
 
-        # Сообщения от старых к новым (как хронология поездки)
-        async for msg in client.iter_messages(entity, reverse=True):
-            if not msg.media:
-                continue
-            if args.limit and processed >= args.limit:
-                break
+            # Сообщения от старых к новым (как хронология поездки)
+            async for msg in client.iter_messages(entity, reverse=True):
+                if not msg.media:
+                    continue
+                if args.limit and processed >= args.limit:
+                    break
 
-            is_photo = isinstance(msg.media, MessageMediaPhoto)
-            is_doc = isinstance(msg.media, MessageMediaDocument)
-            if not is_photo and not is_doc:
-                continue
-
-            mime_early = ""
-            if is_doc and msg.media.document:
-                mime_early = getattr(msg.media.document, "mime_type", "") or ""
-
-            if args.skip_videos and mime_early.startswith("video/"):
-                continue
-
-            dedup = media_dedup_key(msg)
-            if not args.dry_run and already_imported(sb, trip_id, dedup, False):
-                skipped_dup += 1
-                continue
-
-            sender = await msg.get_sender()
-            user_id = get_or_create_user(sb, sender, args.dry_run)
-            if not user_id and not args.dry_run:
-                print(f"Пропуск msg {msg.id}: не удалось создать пользователя")
-                continue
-
-            try:
-                bio = io.BytesIO()
-                await client.download_media(msg, file=bio)
-                raw = bio.getvalue()
-            except Exception as e:
-                print(f"Скачивание msg {msg.id}: {e}")
-                continue
-
-            if not raw:
-                continue
-
-            caption = msg.message or None
-
-            # Фото (включая документ-картинку)
-            if is_photo or (
-                is_doc
-                and msg.media.document
-                and (getattr(msg.media.document, "mime_type", "") or "").startswith("image/")
-            ):
-                coords, taken = extract_exif_exifread(raw)
-
-                try:
-                    orig_jpeg, thumb_jpeg = process_image_to_jpeg(raw)
-                except Exception as e:
-                    print(f"Изображение msg {msg.id}, пропуск конвертации: {e}")
+                is_photo = isinstance(msg.media, MessageMediaPhoto)
+                is_doc = isinstance(msg.media, MessageMediaDocument)
+                if not is_photo and not is_doc:
                     continue
 
+                mime_early = ""
+                if is_doc and msg.media.document:
+                    mime_early = getattr(msg.media.document, "mime_type", "") or ""
+
+                if args.skip_videos and mime_early.startswith("video/"):
+                    continue
+
+                dedup = media_dedup_key(msg)
+                if not args.dry_run and already_imported(sb, trip_id, dedup, False):
+                    skipped_dup += 1
+                    continue
+
+                sender = await msg.get_sender()
+                user_id = get_or_create_user(sb, sender, args.dry_run)
+                if not user_id and not args.dry_run:
+                    print(f"Пропуск msg {msg.id}: не удалось создать пользователя")
+                    continue
+
+                try:
+                    bio = io.BytesIO()
+                    await client.download_media(msg, file=bio)
+                    raw = bio.getvalue()
+                except Exception as e:
+                    print(f"Скачивание msg {msg.id}: {e}")
+                    continue
+
+                if not raw:
+                    continue
+
+                caption = msg.message or None
+
+                # Фото (включая документ-картинку)
+                if is_photo or (
+                    is_doc
+                    and msg.media.document
+                    and (getattr(msg.media.document, "mime_type", "") or "").startswith("image/")
+                ):
+                    coords, taken = extract_exif_exifread(raw)
+
+                    try:
+                        orig_jpeg, thumb_jpeg = process_image_to_jpeg(raw)
+                    except Exception as e:
+                        print(f"Изображение msg {msg.id}, пропуск конвертации: {e}")
+                        continue
+
+                    media_id = str(uuid.uuid4())
+                    if args.dry_run:
+                        print(f"[dry] photo msg={msg.id} unique={dedup} coords={coords}")
+                        processed += 1
+                        continue
+
+                    path_o = f"trips/{trip_id}/photos/{media_id}.jpg"
+                    path_t = f"trips/{trip_id}/thumbnails/{media_id}.jpg"
+                    file_url = upload_storage(sb, path_o, orig_jpeg, "image/jpeg")
+                    thumb_url = upload_storage(sb, path_t, thumb_jpeg, "image/jpeg")
+                    if file_url is None or thumb_url is None:
+                        print(
+                            f"Пропуск фото msg {msg.id}: лимит размера Storage (413). "
+                            f"Увеличьте лимит в Supabase → Project Settings → Storage или уменьшите файл."
+                        )
+                        continue
+                    if not file_url or not thumb_url:
+                        print(f"Ошибка загрузки в Storage msg {msg.id}")
+                        continue
+
+                    shot_at = taken or msg.date
+                    shot_iso = shot_at.isoformat() if hasattr(shot_at, "isoformat") else datetime.now(timezone.utc).isoformat()
+
+                    loc_id = None
+                    lat = lng = None
+                    if coords:
+                        lat, lng = coords[0], coords[1]
+                        locs = sb.table("locations").select("*").eq("trip_id", trip_id).execute().data or []
+                        loc = find_nearest_location(lat, lng, locs)
+                        if not loc:
+                            gc = reverse_geocode(lat, lng, ua)
+                            wiki = search_wikipedia(gc["name"], ua) if gc else None
+                            ins = (
+                                sb.table("locations")
+                                .insert(
+                                    {
+                                        "trip_id": trip_id,
+                                        "name": (gc or {}).get("name") or "Неизвестное место",
+                                        "address": (gc or {}).get("address"),
+                                        "city": (gc or {}).get("city"),
+                                        "country": (gc or {}).get("country"),
+                                        "lat": lat,
+                                        "lng": lng,
+                                        "description": (wiki or {}).get("description"),
+                                        "wiki_url": (wiki or {}).get("url"),
+                                    }
+                                )
+                                .execute()
+                            )
+                            loc = ins.data[0] if ins.data else None
+                        loc_id = loc["id"] if loc else None
+
+                    row = {
+                        "id": media_id,
+                        "trip_id": trip_id,
+                        "location_id": loc_id,
+                        "user_id": user_id,
+                        "telegram_file_id": None,
+                        "telegram_file_unique_id": dedup,
+                        "file_url": file_url,
+                        "thumbnail_url": thumb_url,
+                        "shot_at": shot_iso,
+                        "lat": lat,
+                        "lng": lng,
+                        "caption": caption,
+                        "media_type": "photo",
+                        "pending_download": False,
+                    }
+                    sb.table("media").insert(row).execute()
+                    processed += 1
+                    print(f"OK photo msg={msg.id} id={media_id}")
+                    continue
+
+                # Видео (импорт локально — грузим в Storage любого размера; лимит 20 МБ только у бота)
+                if not (is_doc and msg.media.document):
+                    continue
+                mime = getattr(msg.media.document, "mime_type", "") or ""
+                if not mime.startswith("video/"):
+                    continue
+
+                file_size = len(raw)
                 media_id = str(uuid.uuid4())
+
                 if args.dry_run:
-                    print(f"[dry] photo msg={msg.id} unique={dedup} coords={coords}")
+                    print(f"[dry] video msg={msg.id} size_mb={file_size / (1024 * 1024):.1f} unique={dedup}")
                     processed += 1
                     continue
 
-                path_o = f"trips/{trip_id}/photos/{media_id}.jpg"
-                path_t = f"trips/{trip_id}/thumbnails/{media_id}.jpg"
-                file_url = upload_storage(sb, path_o, orig_jpeg, "image/jpeg")
-                thumb_url = upload_storage(sb, path_t, thumb_jpeg, "image/jpeg")
-                if file_url is None or thumb_url is None:
+                ext = "mp4"
+                orig_name = None
+                for attr in getattr(msg.media.document, "attributes", []) or []:
+                    if isinstance(attr, DocumentAttributeFilename) and attr.file_name:
+                        orig_name = attr.file_name
+                        low = attr.file_name.lower()
+                        if low.endswith(".mov"):
+                            ext = "mov"
+                        break
+
+                vpath = f"trips/{trip_id}/videos/{media_id}.{ext}"
+                vurl = upload_storage(sb, vpath, raw, mime or "video/mp4")
+
+                # 413: лимит размера в Supabase Storage — полностью пропускаем (без БД и без локального файла)
+                if vurl is None:
                     print(
-                        f"Пропуск фото msg {msg.id}: лимит размера Storage (413). "
-                        f"Увеличьте лимит в Supabase → Project Settings → Storage или уменьшите файл."
+                        f"Пропуск video msg={msg.id} — лимит Storage (413), ~{file_size / (1024 * 1024):.1f} MB. "
+                        f"Поднимите лимит в Supabase или импортируйте вручную."
                     )
                     continue
-                if not file_url or not thumb_url:
-                    print(f"Ошибка загрузки в Storage msg {msg.id}")
-                    continue
 
+                coords, taken = extract_exif_exifread(raw)
                 shot_at = taken or msg.date
                 shot_iso = shot_at.isoformat() if hasattr(shot_at, "isoformat") else datetime.now(timezone.utc).isoformat()
 
-                loc_id = None
                 lat = lng = None
+                loc_id = None
                 if coords:
                     lat, lng = coords[0], coords[1]
                     locs = sb.table("locations").select("*").eq("trip_id", trip_id).execute().data or []
@@ -491,118 +623,28 @@ async def run() -> int:
                         loc = ins.data[0] if ins.data else None
                     loc_id = loc["id"] if loc else None
 
-                row = {
-                    "id": media_id,
-                    "trip_id": trip_id,
-                    "location_id": loc_id,
-                    "user_id": user_id,
-                    "telegram_file_id": None,
-                    "telegram_file_unique_id": dedup,
-                    "file_url": file_url,
-                    "thumbnail_url": thumb_url,
-                    "shot_at": shot_iso,
-                    "lat": lat,
-                    "lng": lng,
-                    "caption": caption,
-                    "media_type": "photo",
-                    "pending_download": False,
-                }
-                sb.table("media").insert(row).execute()
+                sb.table("media").insert(
+                    {
+                        "id": media_id,
+                        "trip_id": trip_id,
+                        "location_id": loc_id,
+                        "user_id": user_id,
+                        "telegram_file_id": None,
+                        "telegram_file_unique_id": dedup,
+                        "file_url": vurl,
+                        "thumbnail_url": None,
+                        "shot_at": shot_iso,
+                        "lat": lat,
+                        "lng": lng,
+                        "caption": caption,
+                        "pending_download": False,
+                        "file_size_bytes": file_size,
+                        "original_filename": orig_name,
+                        "media_type": "video",
+                    }
+                ).execute()
                 processed += 1
-                print(f"OK photo msg={msg.id} id={media_id}")
-                continue
-
-            # Видео (импорт локально — грузим в Storage любого размера; лимит 20 МБ только у бота)
-            if not (is_doc and msg.media.document):
-                continue
-            mime = getattr(msg.media.document, "mime_type", "") or ""
-            if not mime.startswith("video/"):
-                continue
-
-            file_size = len(raw)
-            media_id = str(uuid.uuid4())
-
-            if args.dry_run:
-                print(f"[dry] video msg={msg.id} size_mb={file_size / (1024 * 1024):.1f} unique={dedup}")
-                processed += 1
-                continue
-
-            ext = "mp4"
-            orig_name = None
-            for attr in getattr(msg.media.document, "attributes", []) or []:
-                if isinstance(attr, DocumentAttributeFilename) and attr.file_name:
-                    orig_name = attr.file_name
-                    low = attr.file_name.lower()
-                    if low.endswith(".mov"):
-                        ext = "mov"
-                    break
-
-            vpath = f"trips/{trip_id}/videos/{media_id}.{ext}"
-            vurl = upload_storage(sb, vpath, raw, mime or "video/mp4")
-
-            # 413: лимит размера в Supabase Storage — полностью пропускаем (без БД и без локального файла)
-            if vurl is None:
-                print(
-                    f"Пропуск video msg={msg.id} — лимит Storage (413), ~{file_size / (1024 * 1024):.1f} MB. "
-                    f"Поднимите лимит в Supabase или импортируйте вручную."
-                )
-                continue
-
-            coords, taken = extract_exif_exifread(raw)
-            shot_at = taken or msg.date
-            shot_iso = shot_at.isoformat() if hasattr(shot_at, "isoformat") else datetime.now(timezone.utc).isoformat()
-
-            lat = lng = None
-            loc_id = None
-            if coords:
-                lat, lng = coords[0], coords[1]
-                locs = sb.table("locations").select("*").eq("trip_id", trip_id).execute().data or []
-                loc = find_nearest_location(lat, lng, locs)
-                if not loc:
-                    gc = reverse_geocode(lat, lng, ua)
-                    wiki = search_wikipedia(gc["name"], ua) if gc else None
-                    ins = (
-                        sb.table("locations")
-                        .insert(
-                            {
-                                "trip_id": trip_id,
-                                "name": (gc or {}).get("name") or "Неизвестное место",
-                                "address": (gc or {}).get("address"),
-                                "city": (gc or {}).get("city"),
-                                "country": (gc or {}).get("country"),
-                                "lat": lat,
-                                "lng": lng,
-                                "description": (wiki or {}).get("description"),
-                                "wiki_url": (wiki or {}).get("url"),
-                            }
-                        )
-                        .execute()
-                    )
-                    loc = ins.data[0] if ins.data else None
-                loc_id = loc["id"] if loc else None
-
-            sb.table("media").insert(
-                {
-                    "id": media_id,
-                    "trip_id": trip_id,
-                    "location_id": loc_id,
-                    "user_id": user_id,
-                    "telegram_file_id": None,
-                    "telegram_file_unique_id": dedup,
-                    "file_url": vurl,
-                    "thumbnail_url": None,
-                    "shot_at": shot_iso,
-                    "lat": lat,
-                    "lng": lng,
-                    "caption": caption,
-                    "pending_download": False,
-                    "file_size_bytes": file_size,
-                    "original_filename": orig_name,
-                    "media_type": "video",
-                }
-            ).execute()
-            processed += 1
-            print(f"OK video msg={msg.id} id={media_id}")
+                print(f"OK video msg={msg.id} id={media_id}")
 
     print(f"Готово. Импортировано медиа: {processed}, пропущено дубликатов: {skipped_dup}")
     return 0
