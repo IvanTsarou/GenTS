@@ -1,4 +1,5 @@
 import type { NextFunction } from 'grammy';
+import { InlineKeyboard } from 'grammy';
 import type { BotContext } from '../index';
 import { supabase, type User } from '@/lib/supabase';
 import { logBotMessage, type MessageType } from '@/lib/logger';
@@ -30,10 +31,19 @@ export async function authMiddleware(
     const status = ctx.myChatMember.new_chat_member.status;
     const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
     if (isGroup && (status === 'member' || status === 'administrator')) {
+      const welcomeKb = new InlineKeyboard()
+        .text('📍 Отзыв по локации', 'review_help:location')
+        .row()
+        .text('📅 Отзыв на день', 'review_help:day')
+        .row()
+        .text('🧳 Отзыв о путешествии', 'review_help:trip');
+
       await ctx.reply(
         '👋 Добавлен в группу!\n\n' +
           'Создайте поездку командой: /tripnew [название]\n\n' +
-          'После этого бот будет обрабатывать фото и видео от всех участников.'
+          'После этого бот будет обрабатывать фото и видео от всех участников.\n\n' +
+          'Текстовые отзывы: подпись к фото/видео, ответ на фото/видео или команды в меню (⋮).',
+        { reply_markup: welcomeKb }
       );
     }
     return;

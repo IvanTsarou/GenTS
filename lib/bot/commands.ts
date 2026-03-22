@@ -1,6 +1,7 @@
 import type { Bot } from 'grammy';
 import type { BotContext } from './index';
 import { supabase, type User } from '@/lib/supabase';
+import { extractCommandText, insertTextReview } from '@/lib/reviews';
 
 type AuthenticatedContext = BotContext & { user: User };
 
@@ -12,6 +13,24 @@ export function setupCommands(bot: Bot<BotContext>): void {
   bot.command('tripnew', handleTripNew);
   bot.command('triplist', handleTripList);
   bot.command('help', handleHelp);
+  bot.command('review_location', handleReviewLocation);
+  bot.command('review_day', handleReviewDay);
+  bot.command('review_trip', handleReviewTrip);
+
+  void bot.api
+    .setMyCommands([
+      { command: 'start', description: 'Начало работы' },
+      { command: 'help', description: 'Справка' },
+      { command: 'status', description: 'Статистика поездки' },
+      { command: 'locations', description: 'Список локаций' },
+      { command: 'triplist', description: 'Список поездок' },
+      { command: 'tripnew', description: 'Новая поездка' },
+      { command: 'generate', description: 'Сгенерировать story' },
+      { command: 'review_location', description: 'Отзыв по локации' },
+      { command: 'review_day', description: 'Отзыв на день' },
+      { command: 'review_trip', description: 'Отзыв о путешествии' },
+    ])
+    .catch((e) => console.error('setMyCommands failed:', e));
 }
 
 async function handleStart(ctx: BotContext): Promise<void> {
@@ -53,7 +72,7 @@ async function handleStart(ctx: BotContext): Promise<void> {
     '👋 С возвращением!\n\n' +
       '📸 Отправьте фото из путешествия\n' +
       '🎤 Запишите голосовое сообщение\n' +
-      '✍️ Или напишите текстовый отзыв\n\n' +
+      '✍️ Отзыв: подпись к фото/видео, ответ на фото/видео или /review_*\n\n' +
       'Команды:\n' +
       '/status — статистика\n' +
       '/locations — список локаций\n' +
@@ -235,9 +254,12 @@ async function handleTripList(ctx: BotContext): Promise<void> {
 async function handleHelp(ctx: BotContext): Promise<void> {
   await ctx.reply(
     '📖 GenTS — Travel Story Generator\n\n' +
-      '📸 Отправьте фото — бот извлечёт дату и геолокацию из EXIF\n' +
-      '🎤 Запишите голосовое — будет сохранено как отзыв\n' +
-      '✍️ Напишите текст — добавится к последней локации\n\n' +
+      '📸 Фото/видео — дата и геолокация из EXIF (если есть)\n' +
+      '🎤 Голосовое — сохраняется как аудио-отзыв\n' +
+      '✍️ Текстовый отзыв:\n' +
+      '   • подпись к фото/видео\n' +
+      '   • ответ на сообщение с фото/видео\n' +
+      '   • /review_location, /review_day, /review_trip + текст\n\n' +
       'Команды:\n' +
       '/start — начало работы\n' +
       '/status — статистика поездки\n' +
@@ -247,6 +269,104 @@ async function handleHelp(ctx: BotContext): Promise<void> {
       '/generate — сгенерировать story\n\n' +
       'В группе бот принимает медиа от всех участников.'
   );
+}
+
+async function handleReviewLocation(ctx: BotContext): Promise<void> {
+  const user = (ctx as AuthenticatedContext).user;
+  if (!user) return;
+
+  const text = extractCommandText(ctx.message?.text, 'review_location');
+  if (!text) {
+    await ctx.reply(
+      'Напишите отзыв в той же строке: /review_location ваш текст\n\n' +
+        'Или ответьте текстом на сообщение с фото или видео.'
+    );
+    return;
+  }
+
+  const activeTrip = await getActiveTrip(ctx);
+  if (!activeTrip) {
+    await ctx.reply('❌ Нет активной поездки.');
+    return;
+  }
+
+  const dayDate = new Date().toISOString().split('T')[0];
+  try {
+    await insertTextReview({
+      tripId: activeTrip.id,
+      userId: user.id,
+      text,
+      scope: 'location',
+      locationId: null,
+      dayDate,
+    });
+  } catch (e) {
+    console.error('review_location:', e);
+    await ctx.reply('❌ Ошибка сохранения отзыва.');
+  }
+}
+
+async function handleReviewDay(ctx: BotContext): Promise<void> {
+  const user = (ctx as AuthenticatedContext).user;
+  if (!user) return;
+
+  const text = extractCommandText(ctx.message?.text, 'review_day');
+  if (!text) {
+    await ctx.reply('Напишите отзыв: /review_day ваш текст за сегодня.');
+    return;
+  }
+
+  const activeTrip = await getActiveTrip(ctx);
+  if (!activeTrip) {
+    await ctx.reply('❌ Нет активной поездки.');
+    return;
+  }
+
+  const dayDate = new Date().toISOString().split('T')[0];
+  try {
+    await insertTextReview({
+      tripId: activeTrip.id,
+      userId: user.id,
+      text,
+      scope: 'day',
+      locationId: null,
+      dayDate,
+    });
+  } catch (e) {
+    console.error('review_day:', e);
+    await ctx.reply('❌ Ошибка сохранения отзыва.');
+  }
+}
+
+async function handleReviewTrip(ctx: BotContext): Promise<void> {
+  const user = (ctx as AuthenticatedContext).user;
+  if (!user) return;
+
+  const text = extractCommandText(ctx.message?.text, 'review_trip');
+  if (!text) {
+    await ctx.reply('Напишите отзыв: /review_trip ваш текст о поездке.');
+    return;
+  }
+
+  const activeTrip = await getActiveTrip(ctx);
+  if (!activeTrip) {
+    await ctx.reply('❌ Нет активной поездки.');
+    return;
+  }
+
+  try {
+    await insertTextReview({
+      tripId: activeTrip.id,
+      userId: user.id,
+      text,
+      scope: 'trip',
+      locationId: null,
+      dayDate: null,
+    });
+  } catch (e) {
+    console.error('review_trip:', e);
+    await ctx.reply('❌ Ошибка сохранения отзыва.');
+  }
 }
 
 async function getActiveTrip(ctx: BotContext) {

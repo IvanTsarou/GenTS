@@ -6,6 +6,7 @@ import { findNearestLocation } from '@/lib/clustering';
 import { reverseGeocode } from '@/lib/geocoding';
 import { searchWikipedia } from '@/lib/wikipedia';
 import { getActiveTrip } from '../commands';
+import { insertCaptionReview } from '@/lib/reviews';
 import { v4 as uuidv4 } from 'uuid';
 
 type AuthenticatedContext = BotContext & { user: User };
@@ -33,11 +34,9 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
   const caption = ctx.message?.caption || null;
 
   if (isLargeFile) {
-    await ctx.reply(`🎬 Большое видео (${fileSizeMB.toFixed(1)} MB) — сохраняю ссылку для скачивания позже...`);
-    
     try {
       const mediaId = uuidv4();
-      
+
       await supabase.from('media').insert({
         id: mediaId,
         trip_id: activeTrip.id,
@@ -52,23 +51,18 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
         media_type: 'video',
       });
 
-      await ctx.reply(
-        `✅ Видео зарегистрировано!\n\n` +
-          `📦 Размер: ${fileSizeMB.toFixed(1)} MB\n` +
-          `⏳ Статус: ожидает скачивания\n\n` +
-          'Файл будет скачан после поездки через специальный скрипт.',
-        {
-          reply_to_message_id: ctx.message?.message_id,
-        }
-      );
+      await insertCaptionReview(caption, {
+        tripId: activeTrip.id,
+        userId: user.id,
+        locationId: null,
+        shotAt: new Date(),
+      });
     } catch (error) {
       console.error('Large video registration error:', error);
       await ctx.reply('❌ Ошибка регистрации видео. Попробуйте ещё раз.');
     }
     return;
   }
-
-  await ctx.reply(`🎬 Обрабатываю видео (${fileSizeMB.toFixed(1)} MB)...`);
 
   try {
     const file = await ctx.api.getFile(video.file_id);
@@ -126,6 +120,13 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
         pending_download: false,
         file_size_bytes: fileSize,
         media_type: 'video',
+      });
+
+      await insertCaptionReview(caption, {
+        tripId: activeTrip.id,
+        userId: user.id,
+        locationId: null,
+        shotAt: shotAt ?? new Date(),
       });
 
       await ctx.reply(
@@ -191,21 +192,12 @@ export async function handleVideo(ctx: BotContext): Promise<void> {
       media_type: 'video',
     });
 
-    const locationName = location?.name || location?.city || 'новая локация';
-    const dateStr = shotAt
-      ? shotAt.toLocaleDateString('ru', {
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-        })
-      : 'дата неизвестна';
-
-    await ctx.reply(
-      `✅ Видео сохранено!\n\n` +
-        `📍 ${locationName}\n` +
-        `📅 ${dateStr}` +
-        (caption ? `\n💬 "${caption}"` : '')
-    );
+    await insertCaptionReview(caption, {
+      tripId: activeTrip.id,
+      userId: user.id,
+      locationId: location?.id ?? null,
+      shotAt: shotAt ?? new Date(),
+    });
   } catch (error) {
     console.error('Video handling error:', error);
     await ctx.reply('❌ Ошибка обработки видео. Попробуйте ещё раз.');

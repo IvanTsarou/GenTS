@@ -7,6 +7,7 @@ import { findNearestLocation } from '@/lib/clustering';
 import { reverseGeocode } from '@/lib/geocoding';
 import { searchWikipedia } from '@/lib/wikipedia';
 import { getActiveTrip } from '../commands';
+import { insertCaptionReview } from '@/lib/reviews';
 import { v4 as uuidv4 } from 'uuid';
 
 type AuthenticatedContext = BotContext & { user: User };
@@ -63,8 +64,6 @@ export async function handleDocument(ctx: BotContext): Promise<void> {
 
   const caption = ctx.message?.caption || null;
 
-  await ctx.reply('📸 Обрабатываю фото (с EXIF)...');
-
   try {
     const file = await ctx.api.getFile(document.file_id);
     const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
@@ -95,6 +94,13 @@ export async function handleDocument(ctx: BotContext): Promise<void> {
         thumbnail_url: uploadResult.thumbnailUrl,
         shot_at: shotAt?.toISOString() || new Date().toISOString(),
         caption,
+      });
+
+      await insertCaptionReview(caption, {
+        tripId: activeTrip.id,
+        userId: user.id,
+        locationId: null,
+        shotAt: shotAt ?? new Date(),
       });
 
       const dateInfo = shotAt
@@ -161,22 +167,12 @@ export async function handleDocument(ctx: BotContext): Promise<void> {
       caption,
     });
 
-    const locationName = location?.name || location?.city || 'новая локация';
-    const dateStr = shotAt
-      ? shotAt.toLocaleDateString('ru', {
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-        })
-      : 'дата неизвестна';
-
-    await ctx.reply(
-      `✅ Фото сохранено!\n\n` +
-        `📍 ${locationName}\n` +
-        `📅 ${dateStr}` +
-        (caption ? `\n💬 "${caption}"` : '') +
-        '\n\n✨ EXIF-данные успешно извлечены!'
-    );
+    await insertCaptionReview(caption, {
+      tripId: activeTrip.id,
+      userId: user.id,
+      locationId: location?.id ?? null,
+      shotAt: shotAt ?? new Date(),
+    });
   } catch (error) {
     console.error('Document photo handling error:', error);
     await ctx.reply('❌ Ошибка обработки фото. Попробуйте ещё раз.');
@@ -201,8 +197,6 @@ async function handleLargeVideoDocument(
 
   const caption = ctx.message?.caption || null;
 
-  await ctx.reply(`🎬 Большое видео (${fileSizeMB.toFixed(1)} MB) — сохраняю ссылку для скачивания позже...`);
-
   try {
     const mediaId = uuidv4();
 
@@ -221,16 +215,12 @@ async function handleLargeVideoDocument(
       media_type: 'video',
     });
 
-    await ctx.reply(
-      `✅ Видео зарегистрировано!\n\n` +
-        `📦 Размер: ${fileSizeMB.toFixed(1)} MB\n` +
-        `📁 Файл: ${document.file_name || 'без имени'}\n` +
-        `⏳ Статус: ожидает скачивания\n\n` +
-        'Файл будет скачан после поездки через специальный скрипт.',
-      {
-        reply_to_message_id: ctx.message?.message_id,
-      }
-    );
+    await insertCaptionReview(caption, {
+      tripId: activeTrip.id,
+      userId: user.id,
+      locationId: null,
+      shotAt: new Date(),
+    });
   } catch (error) {
     console.error('Large video registration error:', error);
     await ctx.reply('❌ Ошибка регистрации видео. Попробуйте ещё раз.');
@@ -253,8 +243,6 @@ async function handleVideoDocument(
   }
 
   const caption = ctx.message?.caption || null;
-
-  await ctx.reply('🎬 Обрабатываю видео...');
 
   try {
     const file = await ctx.api.getFile(document.file_id);
@@ -313,6 +301,13 @@ async function handleVideoDocument(
         file_size_bytes: fileSize,
         original_filename: document.file_name || null,
         media_type: 'video',
+      });
+
+      await insertCaptionReview(caption, {
+        tripId: activeTrip.id,
+        userId: user.id,
+        locationId: null,
+        shotAt: shotAt ?? new Date(),
       });
 
       const dateInfo = shotAt
@@ -383,21 +378,12 @@ async function handleVideoDocument(
       media_type: 'video',
     });
 
-    const locationName = location?.name || location?.city || 'новая локация';
-    const dateStr = shotAt
-      ? shotAt.toLocaleDateString('ru', {
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-        })
-      : 'дата неизвестна';
-
-    await ctx.reply(
-      `✅ Видео сохранено!\n\n` +
-        `📍 ${locationName}\n` +
-        `📅 ${dateStr}` +
-        (caption ? `\n💬 "${caption}"` : '')
-    );
+    await insertCaptionReview(caption, {
+      tripId: activeTrip.id,
+      userId: user.id,
+      locationId: location?.id ?? null,
+      shotAt: shotAt ?? new Date(),
+    });
   } catch (error) {
     console.error('Video document handling error:', error);
     await ctx.reply('❌ Ошибка обработки видео. Попробуйте ещё раз.');

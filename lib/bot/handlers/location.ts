@@ -92,14 +92,6 @@ export async function handleLocation(ctx: BotContext): Promise<void> {
         lng: coordinates.lng,
       })
       .in('id', mediaIds);
-
-    const locationName = targetLocation.name || targetLocation.city || 'Новая локация';
-
-    await ctx.reply(
-      `✅ Геолокация привязана!\n\n` +
-        `📍 ${locationName}\n` +
-        `📸 Привязано фото: ${unlinkedMedia.length}`
-    );
   } catch (error) {
     console.error('Location handling error:', error);
     await ctx.reply('❌ Ошибка обработки геолокации.');

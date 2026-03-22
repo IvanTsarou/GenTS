@@ -6,8 +6,11 @@ import { handleVideo } from './video';
 import { handleVoice } from './voice';
 import { handleText } from './text';
 import { handleLocation } from './location';
+import { handleReviewHelpCallback } from './callback';
 
 export function setupHandlers(bot: Bot<BotContext>): void {
+  bot.callbackQuery(/^review_help:(location|day|trip)$/, handleReviewHelpCallback);
+
   bot.on('message:photo', handlePhoto);
   bot.on('message:document', handleDocument);
   bot.on('message:video', handleVideo);

@@ -81,6 +81,7 @@ export type Review = {
   format: 'text' | 'audio';
   audio_url: string | null;
   day_date: string | null;
+  review_scope: 'location' | 'day' | 'trip' | null;
   created_at: string;
 };
 

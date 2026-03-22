@@ -7,6 +7,7 @@ import { findNearestLocation } from '@/lib/clustering';
 import { reverseGeocode } from '@/lib/geocoding';
 import { searchWikipedia } from '@/lib/wikipedia';
 import { getActiveTrip } from '../commands';
+import { insertCaptionReview } from '@/lib/reviews';
 import { v4 as uuidv4 } from 'uuid';
 
 type AuthenticatedContext = BotContext & { user: User };
@@ -29,8 +30,6 @@ export async function handlePhoto(ctx: BotContext): Promise<void> {
 
   const largestPhoto = photos[photos.length - 1];
   const caption = ctx.message?.caption || null;
-
-  await ctx.reply('📸 Обрабатываю фото...\n\n💡 Совет: отправляйте фото как файл (📎 → Файл), чтобы сохранить EXIF-данные.');
 
   try {
     const file = await ctx.api.getFile(largestPhoto.file_id);
@@ -62,6 +61,13 @@ export async function handlePhoto(ctx: BotContext): Promise<void> {
         thumbnail_url: uploadResult.thumbnailUrl,
         shot_at: shotAt?.toISOString() || new Date().toISOString(),
         caption,
+      });
+
+      await insertCaptionReview(caption, {
+        tripId: activeTrip.id,
+        userId: user.id,
+        locationId: null,
+        shotAt: shotAt ?? new Date(),
       });
 
       await ctx.reply(
@@ -124,21 +130,12 @@ export async function handlePhoto(ctx: BotContext): Promise<void> {
       caption,
     });
 
-    const locationName = location?.name || location?.city || 'новая локация';
-    const dateStr = shotAt
-      ? shotAt.toLocaleDateString('ru', {
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-        })
-      : 'дата неизвестна';
-
-    await ctx.reply(
-      `✅ Фото сохранено!\n\n` +
-        `📍 ${locationName}\n` +
-        `📅 ${dateStr}` +
-        (caption ? `\n💬 "${caption}"` : '')
-    );
+    await insertCaptionReview(caption, {
+      tripId: activeTrip.id,
+      userId: user.id,
+      locationId: location?.id ?? null,
+      shotAt: shotAt ?? new Date(),
+    });
   } catch (error) {
     console.error('Photo handling error:', error);
     await ctx.reply('❌ Ошибка обработки фото. Попробуйте ещё раз.');
