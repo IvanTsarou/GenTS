@@ -1,7 +1,7 @@
 import type { Coordinates } from './types';
 import type { Location } from './supabase';
 
-const CLUSTER_RADIUS_METERS = 200;
+const CLUSTER_RADIUS_METERS = 500;
 const EARTH_RADIUS_METERS = 6371000;
 
 function toRadians(degrees: number): number {
@@ -29,9 +29,11 @@ export function calculateDistance(
   return EARTH_RADIUS_METERS * c;
 }
 
-export function findNearestLocation(
+/** Ближайшая локация с координатами в пределах radiusMeters (метры). */
+export function findNearestLocationWithinRadius(
   coordinates: Coordinates,
-  locations: Location[]
+  locations: Location[],
+  radiusMeters: number
 ): Location | null {
   let nearestLocation: Location | null = null;
   let minDistance = Infinity;
@@ -44,13 +46,20 @@ export function findNearestLocation(
       lng: location.lng,
     });
 
-    if (distance <= CLUSTER_RADIUS_METERS && distance < minDistance) {
+    if (distance <= radiusMeters && distance < minDistance) {
       minDistance = distance;
       nearestLocation = location;
     }
   }
 
   return nearestLocation;
+}
+
+export function findNearestLocation(
+  coordinates: Coordinates,
+  locations: Location[]
+): Location | null {
+  return findNearestLocationWithinRadius(coordinates, locations, CLUSTER_RADIUS_METERS);
 }
 
 export function shouldCreateNewLocation(

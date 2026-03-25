@@ -1,6 +1,7 @@
 # Python 3.10+
 telethon>=1.34.0
 pillow>=10.0.0
+pillow-heif
 requests>=2.31.0
 supabase>=2.3.0
 exifread>=3.0.0

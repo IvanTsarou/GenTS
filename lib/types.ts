@@ -41,6 +41,9 @@ export type StructuredLocation = {
     address: string | null;
     city: string | null;
     country: string | null;
+    lat: number | null;
+    lng: number | null;
+    wiki_url: string | null;
   };
   photos: StructuredPhoto[];
   reviews: StructuredReview[];
@@ -61,6 +64,7 @@ export type StructuredReview = {
   format: 'text' | 'audio';
   author: string | null;
   created_at: string;
+  audio_url: string | null;
 };
 
 export type StructuredTrip = {

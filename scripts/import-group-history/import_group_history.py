@@ -53,9 +53,17 @@ try:
     pillow_heif.register_heif_opener()
     HAS_HEIF = True
 except Exception:
+    # Если pillow-heif не установлен или не работает на текущей платформе,
+    # то HEIC/HEIF (часто с iPhone) не распознаются Pillow и будут пропущены.
+    print(
+        "HEIC/HEIF поддержка Pillow отключена: не удалось импортировать pillow-heif. "
+        "Фото с iPhone (HEIC) будут пропускаться. "
+        "Установите pillow-heif (и при необходимости system libheif).",
+        file=sys.stderr,
+    )
     HAS_HEIF = False
 
-CLUSTER_RADIUS_M = 200
+CLUSTER_RADIUS_M = 500
 EARTH_R_M = 6371000
 NOMINATIM_BASE = "https://nominatim.openstreetmap.org"
 THUMB_MAX = 400
@@ -351,22 +359,41 @@ def _is_storage_payload_too_large(exc: BaseException) -> bool:
     return False
 
 
+def _is_transient_read_timeout(exc: BaseException) -> bool:
+    """
+    Supabase Storage upload иногда падает по таймауту чтения ответа.
+    Это чаще временная проблема сети/загрузки, поэтому делаем retry.
+    """
+    s = str(exc).lower()
+    return "readtimeout" in s or "read operation timed out" in s or "timed out" in s or "timeout" in s
+
+
 def upload_storage(sb: Any, path: str, data: bytes, content_type: str) -> Optional[str]:
     """Загрузка в Storage. Возвращает None при 413 (файл слишком большой для лимита проекта)."""
-    try:
-        sb.storage.from_("media").upload(
-            path,
-            data,
-            file_options={"content-type": content_type, "upsert": "true"},
-        )
-    except Exception as e:
-        if _is_storage_payload_too_large(e):
-            return None
-        raise
-    pub = sb.storage.from_("media").get_public_url(path)
-    if isinstance(pub, dict):
-        return pub.get("publicUrl") or pub.get("public_url")
-    return str(pub) if pub else None
+    attempts = 4
+    for attempt in range(attempts):
+        try:
+            sb.storage.from_("media").upload(
+                path,
+                data,
+                file_options={"content-type": content_type, "upsert": "true"},
+            )
+            pub = sb.storage.from_("media").get_public_url(path)
+            if isinstance(pub, dict):
+                return pub.get("publicUrl") or pub.get("public_url")
+            return str(pub) if pub else None
+        except Exception as e:
+            if _is_storage_payload_too_large(e):
+                return None
+            if _is_transient_read_timeout(e) and attempt < attempts - 1:
+                sleep_s = 2**attempt
+                print(
+                    f"Storage upload timeout, retrying ({attempt + 1}/{attempts}) in {sleep_s}s: {e}",
+                    file=sys.stderr,
+                )
+                time.sleep(sleep_s)
+                continue
+            raise
 
 
 async def run() -> int:
@@ -478,7 +505,14 @@ async def run() -> int:
                     try:
                         orig_jpeg, thumb_jpeg = process_image_to_jpeg(raw)
                     except Exception as e:
-                        print(f"Изображение msg {msg.id}, пропуск конвертации: {e}")
+                        if not HAS_HEIF:
+                            print(
+                                f"HEIC/HEIF вероятен у msg {msg.id} (iPhone): "
+                                f"пропуск конвертации (pillow-heif не работает). Ошибка: {e}",
+                                file=sys.stderr,
+                            )
+                        else:
+                            print(f"Изображение msg {msg.id}, пропуск конвертации: {e}")
                         continue
 
                     media_id = str(uuid.uuid4())

@@ -15,12 +15,46 @@ Telegram-бот для сбора фотографий, голосовых и т
 ## Технологии
 
 - **Runtime:** Next.js 14 (App Router) на Vercel
+- **Travel Story UI:** Tailwind CSS 4, Radix UI, Framer Motion (scrapbook)
 - **Telegram Bot:** grammy (webhook-режим)
 - **База данных:** Supabase (PostgreSQL)
 - **Хранение файлов:** Supabase Storage
 - **Геокодинг:** Nominatim (OpenStreetMap)
 - **EXIF:** exifr
 - **Thumbnails:** sharp
+
+## Travel Story (веб)
+
+Интерактивная «история путешествия» в одном приложении с ботом:
+
+| URL / API | Назначение |
+|-----------|------------|
+| `/` | Главная, ссылка на демо |
+| `/story/demo` | Демо без базы (мок-данные) |
+| `/story/<uuid>` | История по `trips.id` из Supabase |
+| `GET /api/trip/<id>/travel-story` | JSON для UI (снимок или сборка из медиа/локаций/отзывов) |
+| `PATCH /api/trip/<id>/travel-story` | Сохранить отредактированный JSON в `trips.story_snapshot` |
+| `POST /api/trip/<id>/travel-story/bootstrap` | Один раз собрать историю из БД и записать в `story_snapshot` (Bearer `STORY_EDIT_TOKEN`; `?force=1` — перезапись) |
+
+**Визуальная тема:** палитра в `app/globals.css` заточена под **Оман / ОАЭ / Персидский залив** (песок, известняк, бирюза моря, терракотовый закат, красный акцент как на флаге).
+
+**Миграция:** выполните `supabase/migrations/005_trip_story_snapshot.sql` (поля `story_snapshot`, `story_snapshot_updated_at`). Без неё запрос к `trips` падает → страница `/story/<uuid>` даст **404**.
+
+**Сохранение / bootstrap и токены**
+
+| Окружение | Поведение |
+|-----------|-----------|
+| **Production** | Обязательны `STORY_EDIT_TOKEN` и совпадающий `Authorization: Bearer …` для `PATCH` и `POST …/bootstrap`. В браузере задайте тот же секрет в `NEXT_PUBLIC_STORY_EDIT_TOKEN`. |
+| **Development (`npm run dev`)** | Если заголовок **не** передан — `PATCH` и `bootstrap` **разрешены** (удобно без дублирования токена в клиент). Если заголовок передан — он должен совпасть с `STORY_EDIT_TOKEN`. |
+
+**Если «не работает»**
+
+1. **404 на `/story/<uuid>`** — проверьте UUID поездки в Supabase; в терминале dev смотрите лог `[getTravelStoryByTripId] …` (причина из PostgREST).
+2. **Колонки snapshot** — применена ли миграция `005_trip_story_snapshot.sql`.
+3. **`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`** в `.env.local` (без них сервер падает при обращении к БД).
+4. **Картинки не грузятся** — в `next.config.js` разрешены URL `*.supabase.co/storage/v1/object/**` (в т.ч. signed).
+5. **Bootstrap 409** — в БД уже есть `story_snapshot`; используйте `POST …/bootstrap?force=1`.
+6. **Production + 401 при сохранении** — выставьте `NEXT_PUBLIC_STORY_EDIT_TOKEN` равным `STORY_EDIT_TOKEN`.
 
 ## Быстрый старт
 
@@ -63,7 +97,7 @@ APP_URL=https://your-app.vercel.app
 ### 3. Настройка Supabase
 
 1. Создайте проект на [supabase.com](https://supabase.com)
-2. Откройте SQL Editor и выполните миграцию из `supabase/migrations/001_initial_schema.sql`
+2. Откройте SQL Editor и выполните миграции по порядку из `supabase/migrations/` (`001` … `005`)
 3. Создайте Storage bucket с именем `media` (публичный)
 
 ### 4. Локальная разработка

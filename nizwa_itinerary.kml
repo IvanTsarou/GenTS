@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Маршрут Низва и горы — 13-16 марта</name>
+    <description>4 дня в районе Низвы: форты, Джебель-Шамс, Snake Canyon, Джебель-Ахдар</description>
+
+    <Style id="day1">
+      <IconStyle>
+        <color>ff0000ff</color>
+        <scale>1.2</scale>
+        <Icon><href>http://maps.google.com/mapfiles/kml/paddle/1.png</href></Icon>
+      </IconStyle>
+    </Style>
+    <Style id="day2">
+      <IconStyle>
+        <color>ff00aa00</color>
+        <scale>1.2</scale>
+        <Icon><href>http://maps.google.com/mapfiles/kml/paddle/2.png</href></Icon>
+      </IconStyle>
+    </Style>
+    <Style id="day3">
+      <IconStyle>
+        <color>ffff6600</color>
+        <scale>1.2</scale>
+        <Icon><href>http://maps.google.com/mapfiles/kml/paddle/3.png</href></Icon>
+      </IconStyle>
+    </Style>
+    <Style id="day4">
+      <IconStyle>
+        <color>ffaa00ff</color>
+        <scale>1.2</scale>
+        <Icon><href>http://maps.google.com/mapfiles/kml/paddle/4.png</href></Icon>
+      </IconStyle>
+    </Style>
+    <Style id="sleep">
+      <IconStyle>
+        <scale>1.3</scale>
+        <Icon><href>http://maps.google.com/mapfiles/kml/shapes/lodging.png</href></Icon>
+      </IconStyle>
+    </Style>
+
+    <!-- ДЕНЬ 1 — 13 марта -->
+    <Folder>
+      <name>📅 День 1 — 13 марта (Низва → Джебель-Шамс)</name>
+
+      <Placemark>
+        <name>1. Форт Низва</name>
+        <description>8:00 — Главный форт Омана XVII века. Часы: 8:00–20:00.</description>
+        <styleUrl>#day1</styleUrl>
+        <Point><coordinates>57.5302,22.9332,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>2. Форт Бахла (UNESCO)</name>
+        <description>10:00 — Огромный глинобитный форт. ~30 км от Низвы. Часы: 8:00–19:00, вход 5 OMR.</description>
+        <styleUrl>#day1</styleUrl>
+        <Point><coordinates>57.3002,22.9644,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>3. Замок Джабрин</name>
+        <description>11:00 — Роскошный замок XVII века с расписными потолками. Часы: 7:30–21:00.</description>
+        <styleUrl>#day1</styleUrl>
+        <Point><coordinates>57.2493,22.9153,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>4. Старая деревня Аль-Хамра</name>
+        <description>13:00 — Старый глинобитный город у подножья Джебель-Шамс.</description>
+        <styleUrl>#day1</styleUrl>
+        <Point><coordinates>57.2831,23.1202,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>5. Деревня Мисфат аль-Абрийин</name>
+        <description>14:00 — Террасные сады на скале, старинные фалаши (каналы). Очень фотогенично.</description>
+        <styleUrl>#day1</styleUrl>
+        <Point><coordinates>57.3087,23.1378,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>6. Смотровая Джебель-Шамс — закат</name>
+        <description>16:00 — Гранд-Каньон Омана, 3009 м. Закат над пропастью 1000 м. Не нужен 4x4 до смотровой.</description>
+        <styleUrl>#day1</styleUrl>
+        <Point><coordinates>57.2041,23.2131,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>🌙 Ночёвка — Джебель-Шамс</name>
+        <description>Кемпинг или гестхаус прямо у края каньона. Ночью звёзды, утром рассвет над пропастью.</description>
+        <styleUrl>#sleep</styleUrl>
+        <Point><coordinates>57.2041,23.2131,0</coordinates></Point>
+      </Placemark>
+
+    </Folder>
+
+    <!-- ДЕНЬ 2 — 14 марта -->
+    <Folder>
+      <name>📅 День 2 — 14 марта (Джебель-Шамс → Snake Canyon)</name>
+
+      <Placemark>
+        <name>7. Балкон-Уок (хайк вдоль каньона)</name>
+        <description>8:30 — Хайк 6 км вдоль края каньона. Клиффы 1000 м. Около 2-2.5 часов.</description>
+        <styleUrl>#day2</styleUrl>
+        <Point><coordinates>57.2649,23.2376,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>8. Вади Гул (дно каньона)</name>
+        <description>11:00 — Спуск на 4x4 на дно каньона. 7 км по вади, потом пешком. Озёра в пещерах.</description>
+        <styleUrl>#day2</styleUrl>
+        <Point><coordinates>57.2110,23.1904,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>9. Малый Snake Canyon</name>
+        <description>15:00 — Без гида. Кристальная вода, лазание по скалам. Грунтовая дорога, проезжаемая на 4x4.</description>
+        <styleUrl>#day2</styleUrl>
+        <Point><coordinates>57.4338,23.2418,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>10. Деревня Балад Сайт</name>
+        <description>17:00 — Сказочная деревня в горах с террасными полями. Рейтинг 4.7⭐</description>
+        <styleUrl>#day2</styleUrl>
+        <Point><coordinates>57.3886,23.1939,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>🌙 Ночёвка — Балад Сайт / Bait Bimah</name>
+        <description>Небольшой гестхаус у каньона. Bait Bimah — популярное место у Snake Canyon.</description>
+        <styleUrl>#sleep</styleUrl>
+        <Point><coordinates>57.3886,23.1939,0</coordinates></Point>
+      </Placemark>
+
+    </Folder>
+
+    <!-- ДЕНЬ 3 — 15 марта -->
+    <Folder>
+      <name>📅 День 3 — 15 марта (Джебель-Ахдар)</name>
+
+      <Placemark>
+        <name>11. Джебель-Ахдар — плато</name>
+        <description>9:00 — Горное плато 2000 м. Розовые сады, виды на долину. ⚠️ На блокпосту нужен 4x4 — у вас есть!</description>
+        <styleUrl>#day3</styleUrl>
+        <Point><coordinates>57.6276,23.1329,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>12. Деревня Аль-Айн (Джебель-Ахдар)</name>
+        <description>10:00 — Террасные поля, старые дома, розовые и гранатовые сады. Прогулки весь день.</description>
+        <styleUrl>#day3</styleUrl>
+        <Point><coordinates>57.6497,23.1058,0</coordinates></Point>
+      </Placemark>
+
+      <Placemark>
+        <name>🌙 Ночёвка — Джебель-Ахдар</name>
+        <description>Несколько отелей прямо на плато с видом на долину.</description>
+        <styleUrl>#sleep</styleUrl>
+        <Point><coordinates>57.6276,23.1329,0</coordinates></Point>
+      </Placemark>
+
+    </Folder>
+
+    <!-- ДЕНЬ 4 — 16 марта -->
+    <Folder>
+      <name>📅 День 4 — 16 марта (→ Маскат)</name>
+
+      <Placemark>
+        <name>13. Выезд с Джебель-Ахдар → Маскат</name>
+        <description>9:00 — Утренние виды, неспешный выезд. ~2 часа до Маската. Прибытие ~11:30, задолго до 18:00.</description>
+        <styleUrl>#day4</styleUrl>
+        <Point><coordinates>57.6276,23.1329,0</coordinates></Point>
+      </Placemark>
+
+    </Folder>
+
+  </Document>
+</kml>
