@@ -3,6 +3,7 @@ import type { BotCommand } from '@grammyjs/types';
 import type { BotContext } from './index';
 import { supabase, type User } from '@/lib/supabase';
 import { extractCommandText, insertTextReview } from '@/lib/reviews';
+import { askForInlineText } from './pending-input';
 
 type AuthenticatedContext = BotContext & { user: User };
 
@@ -273,7 +274,15 @@ async function handleTripNew(ctx: BotContext): Promise<void> {
   }
 
   const text = ctx.message?.text || '';
-  const tripName = text.replace(/^\/tripnew\s*/i, '').trim() || `Поездка ${new Date().toLocaleDateString('ru')}`;
+  const tripName = text.replace(/^\/tripnew\s*/i, '').trim();
+  if (!tripName) {
+    await askForInlineText(ctx, {
+      kind: 'tripnew',
+      prompt: 'Введите название поездки одним сообщением.',
+      placeholder: 'Напр. Оман — март 2025',
+    });
+    return;
+  }
 
   const chatId = ctx.chat?.id;
   const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
@@ -365,10 +374,13 @@ async function handleReviewLocation(ctx: BotContext): Promise<void> {
 
   const text = extractCommandText(ctx.message?.text, 'review_location');
   if (!text) {
-    await ctx.reply(
-      'Напишите отзыв в той же строке: /review_location ваш текст\n\n' +
-        'Или ответьте текстом на сообщение с фото или видео.'
-    );
+    await askForInlineText(ctx, {
+      kind: 'review_location',
+      prompt:
+        'Напишите отзыв одним сообщением.\n\n' +
+        'Подсказка: можно также ответить текстом на фото/видео — тогда отзыв привяжется к месту.',
+      placeholder: 'Ваш отзыв…',
+    });
     return;
   }
 
@@ -400,7 +412,11 @@ async function handleReviewDay(ctx: BotContext): Promise<void> {
 
   const text = extractCommandText(ctx.message?.text, 'review_day');
   if (!text) {
-    await ctx.reply('Напишите отзыв: /review_day ваш текст за сегодня.');
+    await askForInlineText(ctx, {
+      kind: 'review_day',
+      prompt: 'Напишите отзыв за сегодня одним сообщением.',
+      placeholder: 'Что было сегодня…',
+    });
     return;
   }
 
@@ -432,7 +448,11 @@ async function handleReviewTrip(ctx: BotContext): Promise<void> {
 
   const text = extractCommandText(ctx.message?.text, 'review_trip');
   if (!text) {
-    await ctx.reply('Напишите отзыв: /review_trip ваш текст о поездке.');
+    await askForInlineText(ctx, {
+      kind: 'review_trip',
+      prompt: 'Напишите общий отзыв о поездке одним сообщением.',
+      placeholder: 'Итоги поездки…',
+    });
     return;
   }
 
