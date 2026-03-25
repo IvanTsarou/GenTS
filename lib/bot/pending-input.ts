@@ -61,3 +61,19 @@ export async function askForInlineText(
   setPendingInput(ctx, options.kind, msg.message_id);
 }
 
+/**
+ * Telegram сам отправляет "/command" при выборе из меню команд. Мы не можем это отключить,
+ * но в группах можем попытаться удалить сообщение-команду, чтобы не засорять чат.
+ */
+export async function tryDeleteTriggerMessage(ctx: BotContext): Promise<void> {
+  const chatId = ctx.chat?.id;
+  const messageId = ctx.message?.message_id;
+  const text = ctx.message?.text;
+  if (!chatId || !messageId || !text?.startsWith('/')) return;
+  try {
+    await ctx.api.deleteMessage(chatId, messageId);
+  } catch {
+    // ignore: no rights / private chats / old messages
+  }
+}
+

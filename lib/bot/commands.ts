@@ -3,7 +3,7 @@ import type { BotCommand } from '@grammyjs/types';
 import type { BotContext } from './index';
 import { supabase, type User } from '@/lib/supabase';
 import { extractCommandText, insertTextReview } from '@/lib/reviews';
-import { askForInlineText } from './pending-input';
+import { askForInlineText, tryDeleteTriggerMessage } from './pending-input';
 
 type AuthenticatedContext = BotContext & { user: User };
 
@@ -281,6 +281,7 @@ async function handleTripNew(ctx: BotContext): Promise<void> {
       prompt: 'Введите название поездки одним сообщением.',
       placeholder: 'Напр. Оман — март 2025',
     });
+    await tryDeleteTriggerMessage(ctx);
     return;
   }
 
@@ -381,6 +382,7 @@ async function handleReviewLocation(ctx: BotContext): Promise<void> {
         'Подсказка: можно также ответить текстом на фото/видео — тогда отзыв привяжется к месту.',
       placeholder: 'Ваш отзыв…',
     });
+    await tryDeleteTriggerMessage(ctx);
     return;
   }
 
@@ -417,6 +419,7 @@ async function handleReviewDay(ctx: BotContext): Promise<void> {
       prompt: 'Напишите отзыв за сегодня одним сообщением.',
       placeholder: 'Что было сегодня…',
     });
+    await tryDeleteTriggerMessage(ctx);
     return;
   }
 
@@ -453,6 +456,7 @@ async function handleReviewTrip(ctx: BotContext): Promise<void> {
       prompt: 'Напишите общий отзыв о поездке одним сообщением.',
       placeholder: 'Итоги поездки…',
     });
+    await tryDeleteTriggerMessage(ctx);
     return;
   }
 
