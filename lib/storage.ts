@@ -2,6 +2,36 @@ import { supabase } from './supabase';
 
 const BUCKET_NAME = 'media';
 
+const PUBLIC_MARKER = '/object/public/media/';
+
+/** Из публичного URL Supabase Storage — путь внутри бакета `media`. */
+export function storageObjectPathFromPublicUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const i = url.indexOf(PUBLIC_MARKER);
+  if (i === -1) return null;
+  try {
+    return decodeURIComponent(url.slice(i + PUBLIC_MARKER.length).split('?')[0]);
+  } catch {
+    return null;
+  }
+}
+
+/** Удаляет объекты по URL (игнорирует ошибки — файл мог быть уже удалён). */
+export async function removeMediaFilesByUrls(
+  fileUrl: string | null | undefined,
+  thumbnailUrl: string | null | undefined
+): Promise<void> {
+  const paths = [storageObjectPathFromPublicUrl(fileUrl), storageObjectPathFromPublicUrl(thumbnailUrl)].filter(
+    (p): p is string => Boolean(p)
+  );
+  if (paths.length === 0) return;
+  const unique = Array.from(new Set(paths));
+  const { error } = await supabase.storage.from(BUCKET_NAME).remove(unique);
+  if (error) {
+    console.warn('[storage] remove:', error.message, unique);
+  }
+}
+
 export async function uploadFile(
   buffer: Buffer,
   path: string,
